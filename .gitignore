@@ -1,0 +1,10 @@
+.idea/*
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+data/cpt
+data/logs
+data/vars
+data/*.pkl
+data/submission.csv.gz
