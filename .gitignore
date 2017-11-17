@@ -7,4 +7,5 @@ data/cpt
 data/logs
 data/vars
 data/*.pkl
+data/*.zip
 data/submission.csv.gz
