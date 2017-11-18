@@ -2,7 +2,7 @@ import tensorflow as tf
 
 from feeder import VarFeeder
 from enum import Enum
-from typing import List, Sequence, Iterable
+from typing import List, Iterable
 import numpy as np
 import pandas as pd
 
