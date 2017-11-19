@@ -19,12 +19,12 @@ How to reproduce competition results:
 extract data and features from the input files and put them into
 `data/vars` as Tensorflow checkpoint.
 3. Run trainer:
-`python trainer.py --name s32 --hparam_set=s32 --n_models=3 --do_eval=False --forward_split=False
+`python trainer.py --name s32 --hparam_set=s32 --n_models=3 --name s32 --no_eval --no_forward_split
  --asgd_decay=0.99 --max_steps=11500 --save_from_step=10500`. This command
  will simultaneously train 3 models on different seeds (on a single TF graph)
  and save 10 checkpoints from step 10500 to step 11500 to `data/cpt`.
  __Note:__ training requires GPU, because of cuDNN usage. CPU training will not work.
- If you have 3 or more GPUs, add `--multi_gpu=true` flag to speed up the training. One can also try different
+ If you have 3 or more GPUs, add `--multi_gpu` flag to speed up the training. One can also try different
 hyperparameter sets (described in `hparams.py`): `--hparam_set=definc`,
 `--hparam_set=inst81`, etc.
 Don't be afraid of displayed NaN losses during training. This is normal,
