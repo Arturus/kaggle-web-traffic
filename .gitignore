@@ -9,3 +9,5 @@ data/vars
 data/*.pkl
 data/*.zip
 data/submission.csv.gz
+!data/2017-08-15_2017-09-11.csv.zip
+
