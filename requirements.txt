@@ -1,0 +1,6 @@
+numpy
+pandas
+tqdm
+matplotlib
+tensorflow>=1.4
+
