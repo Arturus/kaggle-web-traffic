@@ -1,0 +1,97 @@
+Hello, Arturus!
+Thank you for sharing the source code.
+Perfect Code! But I have trouble in reproducing competition results, in step 3: run trainer, something unexpected happened, details are as follow:
+
+===================================================================================================================
+C:\Users\Daddy\Desktop\kaggle-web-traffic-master\kaggle-web-traffic-master>python trainer.py --name s32 --hparam_set=s32 --n_models=3 --name s32 --no_eval --no_forward_split --asgd_decay=0.99 --max_steps=11500 --save_from_step=10500
+2017-12-06 16:55:26.777984: I C:\tf_jenkins\home\workspace\rel-win\M\windows-gpu\PY\36\tensorflow\core\platform\cpu_feature_guard.cc:137] Your CPU supports instructions that this TensorFlow binary was not compiled to use: AVX AVX2
+2017-12-06 16:55:27.022484: I C:\tf_jenkins\home\workspace\rel-win\M\windows-gpu\PY\36\tensorflow\core\common_runtime\gpu\gpu_device.cc:1030] Found device 0 with properties:
+name: GeForce GTX 1060 6GB major: 6 minor: 1 memoryClockRate(GHz): 1.7085
+pciBusID: 0000:01:00.0
+totalMemory: 6.00GiB freeMemory: 4.99GiB
+2017-12-06 16:55:27.022613: I C:\tf_jenkins\home\workspace\rel-win\M\windows-gpu\PY\36\tensorflow\core\common_runtime\gpu\gpu_device.cc:1120] Creating TensorFlow device (/device:GPU:0) -> (device: 0, name: GeForce GTX 1060 6GB, pci bus id: 0000:01:00.0, compute capability: 6.1)
+2017-12-06 16:55:29.233805: I C:\tf_jenkins\home\workspace\rel-win\M\windows-gpu\PY\36\tensorflow\core\common_runtime\gpu\gpu_device.cc:1120] Creating TensorFlow device (/device:GPU:0) -> (device: 0, name: GeForce GTX 1060 6GB, pci bus id: 0000:01:00.0, compute capability: 6.1)
+2017-12-06 16:55:31.013880: I C:\tf_jenkins\home\workspace\rel-win\M\windows-gpu\PY\36\tensorflow\core\common_runtime\gpu\gpu_device.cc:1120] Creating TensorFlow device (/device:GPU:0) -> (device: 0, name: GeForce GTX 1060 6GB, pci bus id: 0000:01:00.0, compute capability: 6.1)
+2017-12-06 16:55:34.252660: I C:\tf_jenkins\home\workspace\rel-win\M\windows-gpu\PY\36\tensorflow\core\common_runtime\gpu\gpu_device.cc:1120] Creating TensorFlow device (/device:GPU:0) -> (device: 0, name: GeForce GTX 1060 6GB, pci bus id: 0000:01:00.0, compute capability: 6.1)
+Traceback (most recent call last):
+  File "C:\softwareInstalling\python\lib\site-packages\tensorflow\python\client\session.py", line 1323, in _do_call
+    return fn(*args)
+  File "C:\softwareInstalling\python\lib\site-packages\tensorflow\python\client\session.py", line 1293, in _run_fn
+    self._extend_graph()
+  File "C:\softwareInstalling\python\lib\site-packages\tensorflow\python\client\session.py", line 1354, in _extend_graph
+    self._session, graph_def.SerializeToString(), status)
+  File "C:\softwareInstalling\python\lib\site-packages\tensorflow\python\framework\errors_impl.py", line 473, in __exit__
+    c_api.TF_GetCode(self.status.status))
+tensorflow.python.framework.errors_impl.InvalidArgumentError: Cannot colocate nodes 'm_2/global_norm/L2Loss' and 'm_2/gradients/m_2/CudnnRNN_grad/CudnnRNNBackprop' because no device type supports both of those nodes and the other nodes colocated with them.
+Colocation Debug Info:
+Colocation group had the following types and devices:
+CudnnRNNBackprop: GPU
+Identity:
+L2Loss: CPU
+         [[Node: m_2/global_norm/L2Loss = L2Loss[T=DT_FLOAT, _class=["loc:@m_2/gradients/m_2/CudnnRNN_grad/CudnnRNNBackprop"], _device="/device:GPU:0"](m_2/gradients/m_2/CudnnRNN_grad/tuple/control_dependency_3)]]
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "trainer.py", line 776, in <module>
+    train(**param_dict)
+  File "trainer.py", line 569, in train
+    sess.run(init)
+  File "C:\softwareInstalling\python\lib\site-packages\tensorflow\python\client\session.py", line 889, in run
+    run_metadata_ptr)
+  File "C:\softwareInstalling\python\lib\site-packages\tensorflow\python\client\session.py", line 1120, in _run
+    feed_dict_tensor, options, run_metadata)
+  File "C:\softwareInstalling\python\lib\site-packages\tensorflow\python\client\session.py", line 1317, in _do_run
+    options, run_metadata)
+  File "C:\softwareInstalling\python\lib\site-packages\tensorflow\python\client\session.py", line 1336, in _do_call
+    raise type(e)(node_def, op, message)
+tensorflow.python.framework.errors_impl.InvalidArgumentError: Cannot colocate nodes 'm_2/global_norm/L2Loss' and 'm_2/gradients/m_2/CudnnRNN_grad/CudnnRNNBackprop' because no device type supports both of those nodes and the other nodes colocated with them.
+Colocation Debug Info:
+Colocation group had the following types and devices:
+CudnnRNNBackprop: GPU
+Identity:
+L2Loss: CPU
+         [[Node: m_2/global_norm/L2Loss = L2Loss[T=DT_FLOAT, _class=["loc:@m_2/gradients/m_2/CudnnRNN_grad/CudnnRNNBackprop"], _device="/device:GPU:0"](m_2/gradients/m_2/CudnnRNN_grad/tuple/control_dependency_3)]]
+
+Caused by op 'm_2/global_norm/L2Loss', defined at:
+  File "trainer.py", line 776, in <module>
+    train(**param_dict)
+  File "trainer.py", line 514, in train
+    all_models.append(create_model(scope, i, prefix=prefix, seed=seed + i))
+  File "trainer.py", line 471, in create_model
+    train_model = Model(pipe, hparams, is_train=True, graph_prefix=prefix, asgd_decay=asgd_decay, seed=seed)
+  File "C:\Users\Daddy\Desktop\kaggle-web-traffic-master\kaggle-web-traffic-master\model.py", line 420, in __init__
+    self.train_op, self.glob_norm, self.ema = make_train_op(total_loss, asgd_decay, prefix=graph_prefix)
+  File "C:\Users\Daddy\Desktop\kaggle-web-traffic-master\kaggle-web-traffic-master\model.py", line 274, in make_train_op
+    clipped_gradients, glob_norm = tf.clip_by_global_norm(gradients, GRAD_CLIP_THRESHOLD)
+  File "C:\softwareInstalling\python\lib\site-packages\tensorflow\python\ops\clip_ops.py", line 217, in clip_by_global_norm
+    use_norm = global_norm(t_list, name)
+  File "C:\softwareInstalling\python\lib\site-packages\tensorflow\python\ops\clip_ops.py", line 158, in global_norm
+    half_squared_norms.append(gen_nn_ops.l2_loss(v))
+  File "C:\softwareInstalling\python\lib\site-packages\tensorflow\python\ops\gen_nn_ops.py", line 2586, in l2_loss
+    "L2Loss", t=t, name=name)
+  File "C:\softwareInstalling\python\lib\site-packages\tensorflow\python\framework\op_def_library.py", line 787, in _apply_op_helper
+    op_def=op_def)
+  File "C:\softwareInstalling\python\lib\site-packages\tensorflow\python\framework\ops.py", line 2956, in create_op
+    op_def=op_def)
+  File "C:\softwareInstalling\python\lib\site-packages\tensorflow\python\framework\ops.py", line 1470, in __init__
+    self._traceback = self._graph._extract_stack()  # pylint: disable=protected-access
+
+InvalidArgumentError (see above for traceback): Cannot colocate nodes 'm_2/global_norm/L2Loss' and 'm_2/gradients/m_2/CudnnRNN_grad/CudnnRNNBackprop' because no device type supports both of those nodes and the other nodes colocated with them.
+Colocation Debug Info:
+Colocation group had the following types and devices:
+CudnnRNNBackprop: GPU
+Identity:
+L2Loss: CPU
+         [[Node: m_2/global_norm/L2Loss = L2Loss[T=DT_FLOAT, _class=["loc:@m_2/gradients/m_2/CudnnRNN_grad/CudnnRNNBackprop"], _device="/device:GPU:0"](m_2/gradients/m_2/CudnnRNN_grad/tuple/control_dependency_3)]]
+=====================================================================================================================
+
+envirment of my system:
+  tensorflow 1.4
+  python 3.6
+  windows 10
+  Navida GPU GTX1060, 6G
+  
+ I am looking forword to your reply! thank u!
+  
+         
