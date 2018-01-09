@@ -45,7 +45,7 @@ def read_all() -> pd.DataFrame:
         # Official data
         df = read_file('train_2')
         # Scraped data
-        scraped = read_file('2017-08-15_2017-09-11_new')
+        scraped = read_file('2017-08-15_2017-09-11')
         # Update last two days by scraped data
         df[pd.Timestamp('2017-09-10')] = scraped['2017-09-10']
         df[pd.Timestamp('2017-09-11')] = scraped['2017-09-11']
