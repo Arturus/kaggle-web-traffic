@@ -19,6 +19,7 @@ import pandas as pd
 #from statsmodels.tsa.seasonal import seasonal_decompose
 #stl = seasonal_decompose(x)
 
+from sklearn.preprocessing import Imputer
 
 
 
@@ -126,19 +127,40 @@ def do_imputation(df,imputation_method):
         return df_filled    
     
     
-    def imputation__simple(df):
+    def imputation__simple(df,imputation_method):
         """
         Juat as placeholder for now,
         fill all missing with zeros,
         or mean or median imputation
         """
-        df_filled = df
-        return df_filled     
+        missing_values = [-1]#['NaN', -1]
+        imp = Imputer(missing_values=missing_values,
+                strategy=imputation_method,
+                axis=1)
+        vals = imp.fit_transform(df.values)#[:,1:]) #The data is only [:,1:]. 
+        #"Some rows only contain missing values: [ 35 251 281]"
+        #But get some rows with all missing vals. Since we don't actualyl care about this and never will use this 
+        #for now just use the "Page" number as well to avoid this.
+        
+        
+        cols = df.columns
+        new_df = pd.DataFrame({cols[i]:vals[:,i] for i in range(vals.shape[1])})
+        new_df['Page'] = df['Page']
+        #Put "Page" at left
+        cols = new_df.columns.tolist()
+        new_df = new_df[cols[-1:]+cols[:-1]]
+        new_df.reset_index(drop=True,inplace=True)        
+        return new_df   
     
     
+    if (imputation_method == 'median') or (imputation_method == 'mean'):
+        df = imputation__simple(df,imputation_method)
+    
+    else:
+        raise Exception('not implemented other methods yet')
     
     #First deal with small gaps (missing gaps fewer than e.g. 7 days):
-    df = imputation_small_gaps(df,imputation_method)
+    #df = imputation_small_gaps(df,imputation_method)
     
     #Deal with longer gaps [e.g. by removing enough blocks of length S, where
     #S is the seasonality, to completely get rid of gaps]
@@ -157,7 +179,7 @@ def do_imputation(df,imputation_method):
 
 
 
-def format_like_Kaggle(df, myDataDir, start_date=None, end_date=None):
+def format_like_Kaggle(df, myDataDir, imputation_method, start_date=None, end_date=None):
     """
     Take my data and format it exactly as needed to use for the Kaggle seq2seq
     model [requires making train_1.csv, train_2.csv, key_1.csv, key_2.csv]
@@ -165,7 +187,7 @@ def format_like_Kaggle(df, myDataDir, start_date=None, end_date=None):
     """
     
     
-    def make_train_csv(df, save_path, start_date, end_date):
+    def make_train_csv(df, save_path, imputation_method, start_date, end_date):
         """
         Make the train_1.csv
         """
@@ -184,6 +206,11 @@ def format_like_Kaggle(df, myDataDir, start_date=None, end_date=None):
         idx = pd.date_range(earliest,latest)
         OUT_OF_RANGE_FILL_VALUE = -1 #np.NaN #0 #puttign as nan casts to float and cannot convert to int
 
+
+
+    
+    
+    
         #Reorganize data for each id (->"Page")
         unique_ids = pd.unique(df['Page'])
         df_list = []
@@ -196,12 +223,22 @@ def format_like_Kaggle(df, myDataDir, start_date=None, end_date=None):
             dates.index = pd.to_datetime(dates.index).strftime('%Y-%m-%d')
             dd = pd.DataFrame(dates).T 
             dd['Page'] = u
+            
+            #If doing imputation / other
+            #for each series individually
+            #...
+            
             df_list.append(dd)
         
         df = pd.concat(df_list,axis=0)
         cols = df.columns.tolist()
         df = df[cols[-1:]+cols[:-1]]
         df.reset_index(drop=True,inplace=True)
+        
+        #Imputation, dealing with missing seasonality blocks / out of phase
+        df = do_imputation(df,imputation_method)
+
+            
         df.to_csv(save_path,index=False)
         return df
     
@@ -217,12 +254,12 @@ def format_like_Kaggle(df, myDataDir, start_date=None, end_date=None):
     
     #Make the train csv [for now just do 1, ignore the train 2 part ???]
     save_path = os.path.join(os.path.split(myDataDir)[0],'train_1_my_data.csv')
-    df = make_train_csv(df, save_path, start_date, end_date)
+    df = make_train_csv(df, save_path, imputation_method, start_date, end_date)
 
     #For the prediction phase, need the key ????
 #    make_key_csv(df)
     
-    return
+    return df
 
 
 
@@ -240,8 +277,8 @@ if __name__ == '__main__':
     #     PARAMETERS
     # =============================================================================
     # TOTAL COMPLETED TRIPS:
-    myDataDir = r"/Users/......../Desktop/exData/totalCompletedTripsDaily"
-    imputation_method = 'STL'
+    myDataDir = r"/Users/kocher/Desktop/forecasting/exData/totalCompletedTripsDaily"
+    imputation_method = 'median' #'STL'
     START_DATE = '2015-01-01' #None
     END_DATE = '2017-12-31' #None
     REMOVE_ID_LIST = []#[3,4]#id's for locations that are no longer useful
@@ -264,8 +301,6 @@ if __name__ == '__main__':
     df = remove_cities(df,REMOVE_ID_LIST)
     
     #Put into same format as used by Kaggle, save out csv's    
-    format_like_Kaggle(df, myDataDir, start_date=START_DATE, end_date=END_DATE)
+    df = format_like_Kaggle(df, myDataDir, imputation_method, start_date=START_DATE, end_date=END_DATE)
     
     
-    #Imputation, dealing with missing seasonality blocks / out of phase
-    df = do_imputation(df,imputation_method)
