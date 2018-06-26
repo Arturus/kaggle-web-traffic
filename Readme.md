@@ -35,3 +35,27 @@ load and evaluate 30 different model weights. At the end,
 you'll get `submission.csv.gz` file in `data` directory.
 
 See also [detailed model description](how_it_works.md)
+
+
+
+
+-----------------------------------
+
+GK modifications for own data:
+1. PREPROCESS.py - Maximize reuse of existing architecture: just put my data in exact same format as Kaggle competition csv's
+2. $source activate gktf
+3. $cd ..../kaggle-web-traffic
+4. $python3 PREPROCESS.py
+5. $python3 make_features.py data/vars --add_days=63
+6. $python3 trainer.py --name TEST_attn_head --hparam_set=TEST_attn_head --n_models=3 --asgd_decay=0.99 --max_steps=11500 --save_from_step=10000
+7. $python3 PREDICT.py
+
+- confirmed it runs with 2 layers stacked, or with attention mechanism. Performance is worse in both cases, at least initially.
+
+
+To do:
+1. finish PREPROCESS.py to do better imputation using basic forecasting method [just use STL or Theta to fill in small gaps; otherwise remove blocks]
+2. modify make_features / InputPipeline / VarFeeder  etc. to NOT do the lagged autocorrelations [if ts too short], to NOT use lagged_x, to NOT use wikipedia specific features.
+Use only features relevant to this data.  Still use the (tiled) median series value (before standard scaling), or few other quantiles, too. Keep day of week, add onehot encoded continent or use country like he has it.
+3. Prediction intervals
+4. Architecture improvements

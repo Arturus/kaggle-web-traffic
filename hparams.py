@@ -41,6 +41,105 @@ params_s32 = dict(
     decoder_activation_loss=5e-06,  # max 0.001
 )
 
+
+
+
+
+# Test setting with multiple attention heads
+#python3 trainer.py --name TEST_attn_head --hparam_set=TEST_attn_head --n_models=3 --no_eval --no_forward_split --asgd_decay=0.99 --max_steps=11500 --save_from_step=200
+params_TEST_attn_head = dict(
+    batch_size=256,
+    #train_window=380,
+    train_window=283,
+    train_skip_first=0,
+    rnn_depth=267,
+    use_attn=True,#!!!!!!!!!!!!!!!! Set True
+    attention_depth=64,
+    attention_heads=2,#!!!!!!!!!!!!!!!! Set True
+    encoder_readout_dropout=0.4768781146510798,
+
+    encoder_rnn_layers=1,
+    decoder_rnn_layers=1,
+
+    # decoder_state_dropout_type=['outside','outside'],
+    decoder_input_dropout=[1.0, 1.0, 1.0],
+    decoder_output_dropout=[0.975, 1.0, 1.0],  # min 0.95
+    decoder_state_dropout=[0.99, 0.995, 0.995],  # min 0.95
+    decoder_variational_dropout=[False, False, False],
+    decoder_candidate_l2=0.0,
+    decoder_gates_l2=0.0,
+
+    fingerprint_fc_dropout=0.8232342370695286,
+    gate_dropout=0.9967589439360334,#0.9786,
+    gate_activation='none',
+    encoder_dropout=0.030490422531402273,
+    encoder_stability_loss=0.0,  # max 100
+    encoder_activation_loss=1e-06, # max 0.001
+    decoder_stability_loss=0.0, # max 100
+    decoder_activation_loss=5e-06,  # max 0.001
+)
+
+
+
+# Test setting with multiple GRU/LSTM layers
+#python3 trainer.py --name TEST_stacked --hparam_set=TEST_stacked --n_models=3 --no_eval --no_forward_split --asgd_decay=0.99 --max_steps=11500 --save_from_step=200
+params_TEST_stacked = dict(
+    batch_size=256,
+    #train_window=380,
+    train_window=283,
+    train_skip_first=0,
+    rnn_depth=267,
+    use_attn=False,
+    attention_depth=64,
+    attention_heads=1,
+    encoder_readout_dropout=0.4768781146510798,
+
+    encoder_rnn_layers=2,
+    decoder_rnn_layers=2,
+
+    # decoder_state_dropout_type=['outside','outside'],
+    decoder_input_dropout=[1.0, 1.0, 1.0],
+    decoder_output_dropout=[0.975, 1.0, 1.0],  # min 0.95
+    decoder_state_dropout=[0.99, 0.995, 0.995],  # min 0.95
+    decoder_variational_dropout=[False, False, False],
+    decoder_candidate_l2=0.0,
+    decoder_gates_l2=0.0,
+    fingerprint_fc_dropout=0.8232342370695286,
+    gate_dropout=0.9967589439360334,#0.9786,
+    gate_activation='none',
+    encoder_dropout=0.030490422531402273,
+    encoder_stability_loss=0.0,  # max 100
+    encoder_activation_loss=1e-06, # max 0.001
+    decoder_stability_loss=0.0, # max 100
+    decoder_activation_loss=5e-06,  # max 0.001
+)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 # Default incumbent on last smac3 search
 params_definc = dict(
     batch_size=256,
@@ -185,6 +284,9 @@ sets = {
     'foundinc':params_foundinc,
     'inst81':params_inst81,
     'inst83':params_inst83,
+    
+    'TEST_attn_head':params_TEST_attn_head,
+    'TEST_stacked':params_TEST_stacked,
 }
 
 
@@ -194,5 +296,6 @@ def build_hparams(params=def_params):
 
 def build_from_set(set_name):
     return build_hparams(sets[set_name])
+
 
 
