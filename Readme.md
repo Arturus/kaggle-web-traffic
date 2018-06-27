@@ -46,11 +46,11 @@ GK modifications for own data:
 2. $source activate gktf
 3. $cd ..../kaggle-web-traffic
 4. $python3 PREPROCESS.py
-5. $python3 make_features.py data/vars --add_days=63
+5. $python3 make_features.py data/kaggle/vars kaggle --add_days=63 #need to specify the data directory (data/vars) and feature_set {kaggle, simple, full} depending on using default Arturius kaggle vs. own custom for this application
 6. $python3 trainer.py --name TEST_attn_head --hparam_set=TEST_attn_head --n_models=3 --asgd_decay=0.99 --max_steps=11500 --save_from_step=10000
 7. $python3 PREDICT.py
 
-- confirmed it runs with 2 layers stacked, or with attention mechanism. Performance is worse in both cases, at least initially.
+- confirmed it runs with 2 layers stacked GRU (for both encoder and decoder modules), or with attention mechanism. Performance is worse in both cases [SMAPE], at least initially.
 
 
 To do:

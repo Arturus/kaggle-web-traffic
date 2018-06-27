@@ -10,17 +10,17 @@ Created on Thu Jun 21 12:55:54 2018
 
 #import matplotlib
 #matplotlib.use('Agg')
-#import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt
 
 import os
 import pandas as pd
-#import numpy as np
+import numpy as np
 
 #from statsmodels.tsa.seasonal import seasonal_decompose
 #stl = seasonal_decompose(x)
 
 from sklearn.preprocessing import Imputer
-
+from collections import Counter
 
 
 
@@ -80,6 +80,62 @@ def get_earliest_latest_dates(df):
 #    rows_removed = len1 - len2
 #    print('rows_removed:',rows_removed,'of',len1)
 #    return df   
+
+
+
+
+
+def __missing_vals_distribution(df):
+    """
+    Look at two things:
+        - What fraction of our time series are desne vs. have >= 1 missing value?
+        - Of the series that have missing values, what is distribution of gap lengths?
+          [important to know since will be doing imputation on it]
+    
+    df - in format like Kaggle competition: cols are dates, rows are series
+         start/end missing, nd intermedite gaps have been filled with -1
+    """
+
+    def make_cdf(v):
+        c = Counter(v)
+        x = c.keys()
+        x = np.array(x) - 1 #-1 to go from diff in days from present data -> gap length
+        y = c.values()
+    #    print(c)
+        plt.figure()
+        #plt.plot(x,y,drawstyle='steps')#,marker='o')
+        plt.plot(x,y,linestyle='None',marker='o')
+        plt.title('Distribution of Missing Data Gap Length',fontsize=20)
+        plt.xlabel('Gap Length [days]',fontsize=20)
+        plt.ylabel('Count',fontsize=20)
+    #    plt.axis([-1,10,0,550])
+        plt.show()
+
+    #get fraction dense vs sparse:
+    dd = df.values[:,1:]
+    sparse = (dd==-1).sum(axis=1)
+    Nsparse = float((sparse>0).sum())
+    print(Nsparse)
+    Ntotal = float(dd.shape[0])
+    fraction_dense = (Ntotal - Nsparse) / Ntotal
+    print('Nsparse', Nsparse)
+    print('Ntotal', Ntotal)
+    print('fraction_dense', fraction_dense)
+    
+    #Look at distribution of INTERMEDIATE gap lengths
+    #ignore the leading / lagging unfilled since could just be from the series 
+    #not officially starting yet, or it got closed out.
+    all_gaps = []
+    for row in dd:
+        inds = np.where(row!=-1)[0]
+        x = np.diff(inds)
+        t = list(x[x>1])
+        if len(t)>0:
+            all_gaps.extend(t)
+    make_cdf(all_gaps)
+
+
+
 
 
 
@@ -189,7 +245,7 @@ def format_like_Kaggle(df, myDataDir, imputation_method, start_date=None, end_da
     
     def make_train_csv(df, save_path, imputation_method, start_date, end_date):
         """
-        Make the train_1.csv
+        Make the train_2.csv
         """
         #Rename columns to be as in Kaggle data:
         df.rename(columns={'id':'Page'},inplace=True)
@@ -235,6 +291,11 @@ def format_like_Kaggle(df, myDataDir, imputation_method, start_date=None, end_da
         df = df[cols[-1:]+cols[:-1]]
         df.reset_index(drop=True,inplace=True)
         
+        
+        #Just for analysis: look at kinds of gaps in series    
+        __missing_vals_distribution(df)     
+            
+        
         #Imputation, dealing with missing seasonality blocks / out of phase
         df = do_imputation(df,imputation_method)
 
@@ -253,11 +314,14 @@ def format_like_Kaggle(df, myDataDir, imputation_method, start_date=None, end_da
     
     
     #Make the train csv [for now just do 1, ignore the train 2 part ???]
-    save_path = os.path.join(os.path.split(myDataDir)[0],'train_1_my_data.csv')
+    save_path = os.path.join(os.path.split(myDataDir)[0],'train_2[ours].csv')
     df = make_train_csv(df, save_path, imputation_method, start_date, end_date)
 
     #For the prediction phase, need the key ????
 #    make_key_csv(df)
+    
+    
+   
     
     return df
 
@@ -303,4 +367,4 @@ if __name__ == '__main__':
     #Put into same format as used by Kaggle, save out csv's    
     df = format_like_Kaggle(df, myDataDir, imputation_method, start_date=START_DATE, end_date=END_DATE)
     
-    
+

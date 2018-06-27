@@ -28,7 +28,7 @@ def read_cached(name) -> pd.DataFrame:
                 return df
 
 
-def read_all() -> pd.DataFrame:
+def read_all(data_type) -> pd.DataFrame:
     """
     Reads source data for training/prediction
     """
@@ -43,40 +43,43 @@ def read_all() -> pd.DataFrame:
         df = pd.read_pickle(path)
     else:
         # Official data
-        df = read_file('train_2')
-        # Scraped data
-        scraped = read_file('2017-08-15_2017-09-11')
-        # Update last two days by scraped data
-        df[pd.Timestamp('2017-09-10')] = scraped['2017-09-10']
-        df[pd.Timestamp('2017-09-11')] = scraped['2017-09-11']
+        filename = f'train_2[{data_type}]'
+        df = read_file(filename)
+        
+        if data_type=='kaggle':
+            # Scraped data
+            scraped = read_file('2017-08-15_2017-09-11')
+            # Update last two days by scraped data
+            df[pd.Timestamp('2017-09-10')] = scraped['2017-09-10']
+            df[pd.Timestamp('2017-09-11')] = scraped['2017-09-11']
 
         df = df.sort_index()
         # Cache result
         df.to_pickle(path)
     return df
 
-# todo:remove
-def make_holidays(tagged, start, end) -> pd.DataFrame:
-    def read_df(lang):
-        result = pd.read_pickle('data/holidays/%s.pkl' % lang)
-        return result[~result.dw].resample('D').size().rename(lang)
+## todo:remove
+#def make_holidays(tagged, start, end) -> pd.DataFrame:
+#    def read_df(lang):
+#        result = pd.read_pickle('data/holidays/%s.pkl' % lang)
+#        return result[~result.dw].resample('D').size().rename(lang)
+#
+#    holidays = pd.DataFrame([read_df(lang) for lang in ['en']])#['de', 'en', 'es', 'fr', 'ja', 'ru', 'zh']]) #!!!!!!!!!!! can play around with this: english only
+#    holidays = holidays.loc[:, start:end].fillna(0)
+#    result =tagged[['country']].join(holidays, on='country').drop('country', axis=1).fillna(0).astype(np.int8)
+#    result.columns = pd.DatetimeIndex(result.columns.values)
+#    return result
 
-    holidays = pd.DataFrame([read_df(lang) for lang in ['de', 'en', 'es', 'fr', 'ja', 'ru', 'zh']])
-    holidays = holidays.loc[:, start:end].fillna(0)
-    result =tagged[['country']].join(holidays, on='country').drop('country', axis=1).fillna(0).astype(np.int8)
-    result.columns = pd.DatetimeIndex(result.columns.values)
-    return result
 
-
-def read_x(start, end) -> pd.DataFrame:
+def read_x(start, end, data_type) -> pd.DataFrame:
     """
     Gets source data from start to end date. Any date can be None
     """
-    df = read_all()
+    df = read_all(data_type)
     # User GoogleAnalitycsRoman has really bad data with huge traffic spikes in all incarnations.
     # Wikipedia banned him, we'll ban it too
-    bad_roman = df.index.str.startswith("User:GoogleAnalitycsRoman")
-    df = df[~bad_roman]
+#    bad_roman = df.index.str.startswith("User:GoogleAnalitycsRoman")
+#    df = df[~bad_roman]
     if start and end:
         return df.loc[:, start:end]
     elif end:
@@ -164,7 +167,7 @@ def find_start_end(data: np.ndarray):
     return start_idx, end_idx
 
 
-def prepare_data(start, end, valid_threshold) -> Tuple[pd.DataFrame, pd.DataFrame, np.ndarray, np.ndarray]:
+def prepare_data(start, end, valid_threshold, data_type) -> Tuple[pd.DataFrame, pd.DataFrame, np.ndarray, np.ndarray]:
     """
     Reads source data, calculates start and end of each series, drops bad series, calculates log1p(series)
     :param start: start date of effective time interval, can be None to start from beginning
@@ -173,7 +176,7 @@ def prepare_data(start, end, valid_threshold) -> Tuple[pd.DataFrame, pd.DataFram
     ratio is less than threshold
     :return: tuple(log1p(series), nans, series start, series end)
     """
-    df = read_x(start, end)
+    df = read_x(start, end, data_type)
     starts, ends = find_start_end(df.values)
     # boolean mask for bad (too short) series
     page_mask = (ends - starts) / df.shape[1] < valid_threshold
@@ -262,6 +265,10 @@ def normalize(values: np.ndarray):
 def run():
     parser = argparse.ArgumentParser(description='Prepare data')
     parser.add_argument('data_dir')
+    
+    parser.add_argument('data_type', help="Which data set to use: {'kaggle','ours'}")
+    parser.add_argument('features_set', help="Which set of features to use. His default for Kaggle vs. one of my custom sets: {'arturius','simple','full'}")
+
     parser.add_argument('--valid_threshold', default=0.0, type=float, help="Series minimal length threshold (pct of data length)")
     parser.add_argument('--add_days', default=64, type=int, help="Add N days in a future for prediction")
     parser.add_argument('--start', help="Effective start date. Data before the start is dropped")
@@ -269,8 +276,11 @@ def run():
     parser.add_argument('--corr_backoffset', default=0, type=int, help='Offset for correlation calculation')
     args = parser.parse_args()
 
+    print(args.data_dir, args.data_type, args.features_set)
+
     # Get the data
-    df, nans, starts, ends = prepare_data(args.start, args.end, args.valid_threshold)
+    df, nans, starts, ends = prepare_data(args.start, args.end, args.valid_threshold, args.data_type)
+    
 
     # Our working date range
     data_start, data_end = df.columns[0], df.columns[-1]
@@ -281,7 +291,11 @@ def run():
 
     # Group unique pages by agents
     assert df.index.is_monotonic_increasing
-    page_map = uniq_page_map(df.index.values)
+    #Only do this wikipedia web scraping if doing the kaggle comp. Not for ours
+    if args.data_type=='kaggle':
+        page_map = uniq_page_map(df.index.values)
+
+
 
     # Yearly(annual) autocorrelation
     raw_year_autocorr = batch_autocorr(df.values, 365, starts, ends, 1.5, args.corr_backoffset)
@@ -298,39 +312,99 @@ def run():
     quarter_autocorr = normalize(np.nan_to_num(raw_quarter_autocorr))
 
     # Calculate and encode page features
-    page_features = make_page_features(df.index.values)
-    encoded_page_features = encode_page_features(page_features)
+    if args.data_type=='kaggle':
+        page_features = make_page_features(df.index.values)
+        encoded_page_features = encode_page_features(page_features)
 
     # Make time-dependent features
     features_days = pd.date_range(data_start, features_end)
     #dow = normalize(features_days.dayofweek.values)
     week_period = 7 / (2 * np.pi)
-    dow_norm = features_days.dayofweek.values / week_period
+    dow_norm = features_days.dayofweek.values / week_period #S.dayofweek gives day of the week with Monday=0, Sunday=6
     dow = np.stack([np.cos(dow_norm), np.sin(dow_norm)], axis=-1)
-
+    
+    #index of week number
+    year_period = 52. / (2 * np.pi) #!!!! need to be carefuly non-uniform weeks [52 has 10 days ???]
+    woy_norm = features_days.weekofyear.values / year_period #not sure if by default this starts on Monday vs Sunday
+    woy = np.stack([np.cos(woy_norm), np.sin(woy_norm)], axis=-1)
+    
+    
     # Assemble indices for quarterly lagged data
     lagged_ix = np.stack(lag_indexes(data_start, features_end), axis=-1)
 
-    page_popularity = df.median(axis=1)
-    page_popularity = (page_popularity - page_popularity.mean()) / page_popularity.std()
+
+    count_median = df.median(axis=1)
+    count_median = normalize(count_median)
+
+
+    #Play around w a few other basic summary stats
+    percentiles = []
+    for pctl in [5,25,75,95]:
+        percentiles.append(normalize(np.percentile(df.values,pctl,axis=1)))
+    count_variance = normalize(np.var(df.values,axis=1))
+    #filled_len = df.values.shape[1] - np.count_nonzero(np.isnan(df.values),axis=1) #non-nans
+    #series_length = (df.values>0).sum(axis=1) #actually it has already been log transofmred so this is not correct
+
 
     # Put NaNs back
     df[nans] = np.NaN
 
-    # Assemble final output
-    tensors = dict(
-        hits=df,
-        lagged_ix=lagged_ix,
-        page_map=page_map,
-        page_ix=df.index.values,
-        pf_agent=encoded_page_features['agent'],
-        pf_country=encoded_page_features['country'],
-        pf_site=encoded_page_features['site'],
-        page_popularity=page_popularity,
-        year_autocorr=year_autocorr,
-        quarter_autocorr=quarter_autocorr,
-        dow=dow,
-    )
+
+    #Compile the features
+    print(f'Using {args.features_set} set of features')
+
+    if args.features_set == 'arturius':
+        tensors = dict(
+            hits=df,
+            lagged_ix=lagged_ix,
+            page_map=page_map,
+            page_ix=df.index.values,
+            pf_agent=encoded_page_features['agent'],#ll-access_all-agents  all-access_spider  desktop_all-agents  mobile-web_all-agents
+            pf_country=encoded_page_features['country'],#de        en        es        fr        ja        ru        zh
+            pf_site=encoded_page_features['site'], #commons.wikimedia.org  wikipedia.org  www.mediawiki.org
+            count_median=count_median,
+            year_autocorr=year_autocorr,
+            quarter_autocorr=quarter_autocorr,
+            dow=dow,#N x 2 array since encoded week periodicity as complex number
+        )
+    
+    elif args.features_set == 'simple':
+        tensors = dict(
+            hits=df,
+            count_median=count_median,#this is just the median feature, can put in others too
+            dow=dow,
+        )    
+        
+    elif args.features_set == 'full':
+        tensors = dict(
+            hits=df,
+            page_ix=df.index.values,
+
+            year_autocorr=year_autocorr,
+            quarter_autocorr=quarter_autocorr,
+            count_median=count_median,#this is just the median feature, can put in others too
+            count_variance=count_variance,#variance
+            
+            #percentiles
+            count_pctl_5=percentiles[0],#5th percentile
+            count_pctl_25=percentiles[1],#25th percentile
+            count_pctl_75=percentiles[2],#75th percentile
+            count_pctl_95=percentiles[3],#95th percentile
+#            series_length=series_length,#length of series [number of samples] to get idea of how much history a series has #number nonzero
+            
+            #Other time-frequency/scale features
+            #...
+            
+            #N x 2 array since encoded week periodicity as complex number
+            dow=dow,
+            woy=woy,#and want want week number too, aggregating last ~10 days into week 52
+        )     
+    else:
+        raise Exception(f'features_set must be specified\nOne of ["arturius","simple","full"]')
+    
+    
+    
+    
     plain = dict(
         features_days=len(features_days),
         data_days=len(df.columns),
@@ -340,6 +414,10 @@ def run():
         features_end=features_end
 
     )
+
+
+    print(tensors)
+    print(plain)
 
     # Store data to the disk
     VarFeeder(args.data_dir, tensors, plain)
