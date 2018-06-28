@@ -235,7 +235,7 @@ def do_imputation(df,imputation_method):
 
 
 
-def format_like_Kaggle(df, myDataDir, imputation_method, start_date=None, end_date=None):
+def format_like_Kaggle(df, myDataDir, imputation_method, sampling_period, start_date=None, end_date=None):
     """
     Take my data and format it exactly as needed to use for the Kaggle seq2seq
     model [requires making train_1.csv, train_2.csv, key_1.csv, key_2.csv]
@@ -243,10 +243,20 @@ def format_like_Kaggle(df, myDataDir, imputation_method, start_date=None, end_da
     """
     
     
-    def make_train_csv(df, save_path, imputation_method, start_date, end_date):
+    def make_train_csv(df, save_path, imputation_method, sampling_period, start_date, end_date):
         """
         Make the train_2.csv
         """
+        
+        def aggregate(df, sampling_period):
+            """
+            Aggregate the data (average it) to downsample
+            to desired sample period, e.g. daily measurements -> weekly or monthly.
+            Should smooth out some noise, and help w seasonality.
+            """
+            return df
+        
+        
         #Rename columns to be as in Kaggle data:
         df.rename(columns={'id':'Page'},inplace=True)
         
@@ -298,6 +308,10 @@ def format_like_Kaggle(df, myDataDir, imputation_method, start_date=None, end_da
         
         #Imputation, dealing with missing seasonality blocks / out of phase
         df = do_imputation(df,imputation_method)
+        #Could do impoutation then downsampling, vs. downsampling then imputation ... unclear which is better here in general.
+        #for now assume we do ipmutation THEN aggregation:
+        df = aggregate(df,sampling_period)
+
 
             
         df.to_csv(save_path,index=False)
@@ -314,8 +328,8 @@ def format_like_Kaggle(df, myDataDir, imputation_method, start_date=None, end_da
     
     
     #Make the train csv [for now just do 1, ignore the train 2 part ???]
-    save_path = os.path.join(os.path.split(myDataDir)[0],'train_2[ours].csv')
-    df = make_train_csv(df, save_path, imputation_method, start_date, end_date)
+    save_path = os.path.join(os.path.split(myDataDir)[0],f"train_2[ours_{sampling_period}].csv")
+    df = make_train_csv(df, save_path, imputation_method, sampling_period, start_date, end_date)
 
     #For the prediction phase, need the key ????
 #    make_key_csv(df)
@@ -346,6 +360,7 @@ if __name__ == '__main__':
     START_DATE = '2015-01-01' #None
     END_DATE = '2017-12-31' #None
     REMOVE_ID_LIST = []#[3,4]#id's for locations that are no longer useful
+    SAMPLING_PERIOD = 'daily' #'daily', 'weekly', 'monthly'
 
 
 
@@ -365,6 +380,6 @@ if __name__ == '__main__':
     df = remove_cities(df,REMOVE_ID_LIST)
     
     #Put into same format as used by Kaggle, save out csv's    
-    df = format_like_Kaggle(df, myDataDir, imputation_method, start_date=START_DATE, end_date=END_DATE)
+    df = format_like_Kaggle(df, myDataDir, imputation_method, SAMPLING_PERIOD, start_date=START_DATE, end_date=END_DATE)
     
 

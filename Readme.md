@@ -46,7 +46,7 @@ GK modifications for own data:
 2. $source activate gktf
 3. $cd ..../kaggle-web-traffic
 4. $python3 PREPROCESS.py
-5. $python3 make_features.py data/kaggle/vars kaggle --add_days=63 #need to specify the data directory (data/vars) and feature_set {kaggle, simple, full} depending on using default Arturius kaggle vs. own custom for this application
+5. $python3 make_features.py data/vars kaggle daily arturius --add_days=63 #need to specify the data directory (data/vars) and feature_set {kaggle, simple, full, full_w_context} depending on using default Arturius kaggle vs. own custom for this application; and specify sampling period
 6. $python3 trainer.py --name TEST_attn_head --hparam_set=TEST_attn_head --n_models=3 --asgd_decay=0.99 --max_steps=11500 --save_from_step=10000
 7. $python3 PREDICT.py
 
@@ -55,7 +55,6 @@ GK modifications for own data:
 
 To do:
 1. finish PREPROCESS.py to do better imputation using basic forecasting method [just use STL or Theta to fill in small gaps; otherwise remove blocks]
-2. modify make_features / InputPipeline / VarFeeder  etc. to NOT do the lagged autocorrelations [if ts too short], to NOT use lagged_x, to NOT use wikipedia specific features.
-Use only features relevant to this data.  Still use the (tiled) median series value (before standard scaling), or few other quantiles, too. Keep day of week, add onehot encoded continent or use country like he has it.
+2. PREPROCESS.py  -  allow downsample in time to weekly, monthly
 3. Prediction intervals
 4. Architecture improvements
