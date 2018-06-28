@@ -98,9 +98,9 @@ def __missing_vals_distribution(df):
 
     def make_cdf(v):
         c = Counter(v)
-        x = c.keys()
-        x = np.array(x) - 1 #-1 to go from diff in days from present data -> gap length
-        y = c.values()
+        x = list(c.keys())
+        x = np.array(x) -1 #-1 to go from diff in days from present data -> gap length
+        y = list(c.values())
     #    print(c)
         plt.figure()
         #plt.plot(x,y,drawstyle='steps')#,marker='o')
@@ -297,13 +297,15 @@ def format_like_Kaggle(df, myDataDir, imputation_method, sampling_period, start_
             df_list.append(dd)
         
         df = pd.concat(df_list,axis=0)
-        cols = df.columns.tolist()
-        df = df[cols[-1:]+cols[:-1]]
+        #cols = df.columns.tolist()
+        #df = df[cols[-1:]+cols[:-1]]
         df.reset_index(drop=True,inplace=True)
         
         
-        #Just for analysis: look at kinds of gaps in series    
-        __missing_vals_distribution(df)     
+        #Just for analysis: look at kinds of gaps in series
+        VERBOSE = False
+        if VERBOSE:
+            __missing_vals_distribution(df)     
             
         
         #Imputation, dealing with missing seasonality blocks / out of phase
@@ -313,7 +315,8 @@ def format_like_Kaggle(df, myDataDir, imputation_method, sampling_period, start_
         df = aggregate(df,sampling_period)
 
 
-            
+        #SHould end up with a csv that is rows are series (each id), cols are dates
+        #:eftmost col should be "Pages" to be same as Kaggle format
         df.to_csv(save_path,index=False)
         return df
     
@@ -328,7 +331,8 @@ def format_like_Kaggle(df, myDataDir, imputation_method, sampling_period, start_
     
     
     #Make the train csv [for now just do 1, ignore the train 2 part ???]
-    save_path = os.path.join(os.path.split(myDataDir)[0],f"train_2[ours_{sampling_period}].csv")
+    #save_path = os.path.join(os.path.split(myDataDir)[0],f"train_2[ours_{sampling_period}].csv")
+    save_path = os.path.join(os.path.split(myDataDir)[0],"train_2[ours_{}].csv".format(sampling_period))
     df = make_train_csv(df, save_path, imputation_method, sampling_period, start_date, end_date)
 
     #For the prediction phase, need the key ????

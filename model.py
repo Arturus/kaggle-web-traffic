@@ -66,7 +66,7 @@ def make_encoder(time_inputs, encoder_features_depth, is_train, hparams, seed, t
     def build_rnn():
         return RNN(num_layers=hparams.encoder_rnn_layers, num_units=hparams.rnn_depth,
                    input_size=encoder_features_depth,
-                   direction='unidirectional',
+                   direction='unidirectional', #Let's try bidirectional as well, or ,ay as well try keeping unidirectional but with order reversed, just see what happens
                    dropout=hparams.encoder_dropout if is_train else 0, seed=seed)
 
     static_p_size = cuda_params_size(build_rnn)

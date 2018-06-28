@@ -433,12 +433,12 @@ def run():
         )  
         
         if args.sampling_period=='daily':
-            tensors[dow]=dow
-            tensors[woy]=woy #and want want week number too, aggregating last ~10 days into week 52
+            tensors['dow']=dow
+            tensors['woy']=woy #and want want week number too, aggregating last ~10 days into week 52
         elif args.sampling_period=='weekly':
-            tensors[woy]=woy
+            tensors['woy']=woy
         elif args.sampling_period=='monthly':
-            tensors[moy]=moy
+            tensors['moy']=moy
         else:
             raise Exception('Must specify correct sampling period')
             
