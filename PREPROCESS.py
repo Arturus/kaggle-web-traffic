@@ -332,7 +332,7 @@ def format_like_Kaggle(df, myDataDir, imputation_method, sampling_period, start_
     
     #Make the train csv [for now just do 1, ignore the train 2 part ???]
     #save_path = os.path.join(os.path.split(myDataDir)[0],f"train_2[ours_{sampling_period}].csv")
-    save_path = os.path.join(os.path.split(myDataDir)[0],"train_2[ours_{}].csv".format(sampling_period))
+    save_path = os.path.join(os.path.split(myDataDir)[0],"train_2_ours_{}.csv".format(sampling_period))
     df = make_train_csv(df, save_path, imputation_method, sampling_period, start_date, end_date)
 
     #For the prediction phase, need the key ????

@@ -47,13 +47,20 @@ GK modifications for own data:
 3. $cd ..../kaggle-web-traffic
 4. $python3 PREPROCESS.py
 5. $python3 make_features.py data/vars kaggle daily arturius --add_days=63 #need to specify the data directory (data/vars) and feature_set {kaggle, simple, full, full_w_context} depending on using default Arturius kaggle vs. own custom for this application; and specify sampling period
+python3 make_features.py data/vars kaggle daily full --add_days=63
+
+
+#no reason to expect 10000 to 11500 is good range to save out. View loss along the way
 6. $python3 trainer.py --name TEST_attn_head --hparam_set=TEST_attn_head --n_models=3 --asgd_decay=0.99 --max_steps=11500 --save_from_step=10000
 7. $python3 PREDICT.py
 
 - confirmed it runs with 2 layers stacked GRU (for both encoder and decoder modules), or with attention mechanism. Performance is worse in both cases [SMAPE], at least initially.
 
+- tried bidirectional encoder but has input dimension issues, think about that more later.
 
 To do:
+0. get to work w my features
+0. save log files to view SMAPE etc metrics during training
 1. finish PREPROCESS.py to do better imputation using basic forecasting method [just use STL or Theta to fill in small gaps; otherwise remove blocks]
 2. PREPROCESS.py  -  allow downsample in time to weekly, monthly
 3. Prediction intervals

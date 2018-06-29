@@ -42,7 +42,7 @@ class Splitter:
         self.seed = seed
         clustered_index = self.cluster_pages(cluster_indexes)
         index_len = tf.shape(clustered_index)[0]
-        assert_op = tf.assert_equal(index_len, size, message='n_pages is not equals to size of clustered index')
+        assert_op = tf.assert_equal(index_len, size, message='N_time_series is not equals to size of clustered index')
         with tf.control_dependencies([assert_op]):
             split_nitems = int(round(size / n_splits))
             split_size = [split_nitems] * n_splits
@@ -71,65 +71,70 @@ class Splitter:
 
 class FakeSplitter:
     def __init__(self, tensors: List[tf.Tensor], n_splits, seed, test_sampling=1.0):
-        total_pages = tensors[0].shape[0].value
-        n_pages = int(round(total_pages * test_sampling))
+        total_series = tensors[0].shape[0].value
+        N_time_series = int(round(total_series * test_sampling))
 
         def mk_name(prefix, tensor):
             return prefix + '_' + tensor.name[:-2]
 
         def prepare_split(i):
-            idx = tf.random_shuffle(tf.range(0, n_pages, dtype=tf.int32), seed + i)
+            idx = tf.random_shuffle(tf.range(0, N_time_series, dtype=tf.int32), seed + i)
             train_tensors = [tf.gather(tensor, idx, name=mk_name('shfl', tensor)) for tensor in tensors]
             if test_sampling < 1.0:
-                sampled_idx = idx[:n_pages]
+                sampled_idx = idx[:N_time_series]
                 test_tensors = [tf.gather(tensor, sampled_idx, name=mk_name('shfl_test', tensor)) for tensor in tensors]
             else:
                 test_tensors = train_tensors
-            return Split(test_tensors, train_tensors, n_pages, total_pages)
+            return Split(test_tensors, train_tensors, N_time_series, total_series)
 
         self.splits = [prepare_split(i) for i in range(n_splits)]
 
 
 class InputPipe:
-    def cut(self, hits, start, end):
+    def cut(self, counts, start, end):
         """
         Cuts [start:end] diapason from input data
-        :param hits: hits timeseries
+        :param counts: counts timeseries
         :param start: start index
         :param end: end index
-        :return: tuple (train_hits, test_hits, dow, lagged_hits)
+        :return: tuple (train_counts, test_counts, dow, lagged_counts)
         """
-        # Pad hits to ensure we have enough array length for prediction
-        hits = tf.concat([hits, tf.fill([self.predict_window], np.NaN)], axis=0)
-        cropped_hit = hits[start:end]
+        # Pad counts to ensure we have enough array length for prediction
+        counts = tf.concat([counts, tf.fill([self.predict_window], np.NaN)], axis=0)
+        cropped_hit = counts[start:end]
 
         # cut day of week
-        cropped_dow = self.inp.dow[start:end]
+        if self.inp.dow:
+            cropped_dow = self.inp.dow[start:end] #!!!!!!! only if using dow feature [sampling daily]
+            #!!!!!!!!!!!! do same for moy , woy if using those features
 
-        # Cut lagged hits
-        # gather() accepts only int32 indexes
-        cropped_lags = tf.cast(self.inp.lagged_ix[start:end], tf.int32)
-        # Mask for -1 (no data) lag indexes
-        lag_mask = cropped_lags < 0
-        # Convert -1 to 0 for gather(), it don't accept anything exotic
-        cropped_lags = tf.maximum(cropped_lags, 0)
-        # Translate lag indexes to hit values
-        lagged_hit = tf.gather(hits, cropped_lags)
-        # Convert masked (see above) or NaN lagged hits to zeros
-        lag_zeros = tf.zeros_like(lagged_hit)
-        lagged_hit = tf.where(lag_mask | tf.is_nan(lagged_hit), lag_zeros, lagged_hit)
+        if self.inp.lagged_ix:
+            # Cut lagged counts
+            # gather() accepts only int32 indexes
+            cropped_lags = tf.cast(self.inp.lagged_ix[start:end], tf.int32)
+            # Mask for -1 (no data) lag indexes
+            lag_mask = cropped_lags < 0
+            # Convert -1 to 0 for gather(), it don't accept anything exotic
+            cropped_lags = tf.maximum(cropped_lags, 0)
+            # Translate lag indexes to count values
+            lagged_hit = tf.gather(counts, cropped_lags)
+            # Convert masked (see above) or NaN lagged counts to zeros
+            lag_zeros = tf.zeros_like(lagged_hit)
+            lagged_hit = tf.where(lag_mask | tf.is_nan(lagged_hit), lag_zeros, lagged_hit)
 
         # Split for train and test
-        x_hits, y_hits = tf.split(cropped_hit, [self.train_window, self.predict_window], axis=0)
+        x_counts, y_counts = tf.split(cropped_hit, [self.train_window, self.predict_window], axis=0)
 
         # Convert NaN to zero in for train data
-        x_hits = tf.where(tf.is_nan(x_hits), tf.zeros_like(x_hits), x_hits)
-        return x_hits, y_hits, cropped_dow, lagged_hit
+        x_counts = tf.where(tf.is_nan(x_counts), tf.zeros_like(x_counts), x_counts)
+        return x_counts, y_counts, cropped_dow, lagged_hit #!!!!!!!!!!!! return other cropped time dependent features as well
 
-    def cut_train(self, hits, *args):
+
+
+    def cut_train(self, counts, *args):
         """
         Cuts a segment of time series for training. Randomly chooses starting point.
-        :param hits: hits timeseries
+        :param counts: counts timeseries
         :param args: pass-through data, will be appended to result
         :return: result of cut() + args
         """
@@ -150,56 +155,72 @@ class InputPipe:
         offset = tf.random_uniform((), self.start_offset, free_space, dtype=tf.int32, seed=self.rand_seed)
         end = offset + n_days
         # Cut all the things
-        return self.cut(hits, offset, end) + args
+        return self.cut(counts, offset, end) + args
 
-    def cut_eval(self, hits, *args):
+    def cut_eval(self, counts, *args):
         """
         Cuts segment of time series for evaluation.
         Always cuts train_window + predict_window length segment beginning at start_offset point
-        :param hits: hits timeseries
+        :param counts: counts timeseries
         :param args: pass-through data, will be appended to result
         :return: result of cut() + args
         """
         end = self.start_offset + self.train_window + self.predict_window
-        return self.cut(hits, self.start_offset, end) + args
+        return self.cut(counts, self.start_offset, end) + args
 
-    def reject_filter(self, x_hits, y_hits, *args):
+    def reject_filter(self, x_counts, y_counts, *args):
         """
         Rejects timeseries having too many zero datapoints (more than self.max_train_empty)
         """
         if self.verbose:
             print("max empty %d train %d predict" % (self.max_train_empty, self.max_predict_empty))
-        zeros_x = tf.reduce_sum(tf.to_int32(tf.equal(x_hits, 0.0)))
+        zeros_x = tf.reduce_sum(tf.to_int32(tf.equal(x_counts, 0.0)))
         keep = zeros_x <= self.max_train_empty
         return keep
 
-    def make_features(self, x_hits, y_hits, dow, lagged_hits, pf_agent, pf_country, pf_site, page_ix,
-                      page_popularity, year_autocorr, quarter_autocorr):
+    def make_features(self, x_counts, y_counts, dow, lagged_counts, pf_agent, pf_country, pf_site, page_ix,
+                      count_median, year_autocorr, quarter_autocorr): #!!!!!!!!!!!! if kaggle feats as is
         """
         Main method. Assembles input data into final tensors
+        
+        split into 3 sets of features: time-dependent, per series but static, and context features
+        input as dicts
+        ts_dynamic : {x_counts, y_counts, dow, woy, moy, lagged}
+        ts_static: {count_median, other percentiles...,  autocorrelations, }
+        
+            def make_features(self, ts_dynamic, ts_static, context):
+        
         """
+        
         # Split day of week to train and test
-        x_dow, y_dow = tf.split(dow, [self.train_window, self.predict_window], axis=0)
+        if ts_dynamic['dow']:
+            x_dow, y_dow = tf.split(dow, [self.train_window, self.predict_window], axis=0)
+        if ts_dynamic['woy']:
+            x_woy, y_woy = tf.split(woy, [self.train_window, self.predict_window], axis=0)
+        if ts_dynamic['moy']:
+            x_moy, y_moy = tf.split(moy, [self.train_window, self.predict_window], axis=0)            
+            
 
-        # Normalize hits
-        mean = tf.reduce_mean(x_hits)
-        std = tf.sqrt(tf.reduce_mean(tf.squared_difference(x_hits, mean)))
-        norm_x_hits = (x_hits - mean) / std
-        norm_y_hits = (y_hits - mean) / std
-        norm_lagged_hits = (lagged_hits - mean) / std
+        # Normalize counts
+        mean = tf.reduce_mean(x_counts)
+        std = tf.sqrt(tf.reduce_mean(tf.squared_difference(x_counts, mean)))
+        norm_x_counts = (x_counts - mean) / std
+        norm_y_counts = (y_counts - mean) / std
+        norm_lagged_counts = (lagged_counts - mean) / std   #!!!!!! seems like there is some leakage in time here??? The y lagged are normalized in a way that is a function of the y data ??
 
-        # Split lagged hits to train and test
-        x_lagged, y_lagged = tf.split(norm_lagged_hits, [self.train_window, self.predict_window], axis=0)
+        # Split lagged counts to train and test
+        if ts_dynamic['lagged_ix']:
+            x_lagged, y_lagged = tf.split(norm_lagged_counts, [self.train_window, self.predict_window], axis=0)
 
         # Combine all page features into single tensor
-        stacked_features = tf.stack([page_popularity, quarter_autocorr, year_autocorr])
-        flat_page_features = tf.concat([pf_agent, pf_country, pf_site, stacked_features], axis=0)
+        stacked_features = tf.stack([count_median, quarter_autocorr, year_autocorr])#!!!!!!! if kaggle feats. Else need also the oher quntiles too
+        flat_page_features = tf.concat([pf_agent, pf_country, pf_site, stacked_features], axis=0) 
         page_features = tf.expand_dims(flat_page_features, 0)
 
         # Train features
         x_features = tf.concat([
             # [n_days] -> [n_days, 1]
-            tf.expand_dims(norm_x_hits, -1),
+            tf.expand_dims(norm_x_counts, -1),
             x_dow,
             x_lagged,
             # Stretch page_features to all training days
@@ -217,9 +238,15 @@ class InputPipe:
             tf.tile(page_features, [self.predict_window, 1])
         ], axis=1)
 
-        return x_hits, x_features, norm_x_hits, x_lagged, y_hits, y_features, norm_y_hits, mean, std, flat_page_features, page_ix
+        #!!!!! why no lagged_y alnoe, only in y_features??? 
+        #!!!! why no norm_y_counts ?????
+        return x_counts, x_features, norm_x_counts, x_lagged, y_counts, y_features, norm_y_counts, mean, std, flat_page_features, page_ix
+        #later on the above is assigned to:
+        #self.true_x, self.time_x, self.norm_x, self.lagged_x, self.true_y, self.time_y, self.norm_y, self.norm_mean, \
+        #self.norm_std, self.page_features, self.page_ix = it_tensors
 
-    def __init__(self, inp: VarFeeder, features: Iterable[tf.Tensor], n_pages: int, mode: ModelMode, n_epoch=None,
+
+    def __init__(self, inp: VarFeeder, features: Iterable[tf.Tensor], N_time_series: int, mode: ModelMode, n_epoch=None,
                  batch_size=127, runs_in_burst=1, verbose=True, predict_window=60, train_window=500,
                  train_completeness_threshold=1, predict_completeness_threshold=1, back_offset=0,
                  train_skip_first=0, rand_seed=None):
@@ -227,7 +254,7 @@ class InputPipe:
         Create data preprocessing pipeline
         :param inp: Raw input data
         :param features: Features tensors (subset of data in inp)
-        :param n_pages: Total number of pages
+        :param N_time_series: Total number of pages
         :param mode: Train/Predict/Eval mode selector
         :param n_epoch: Number of epochs. Generates endless data stream if None
         :param batch_size:
@@ -242,7 +269,7 @@ class InputPipe:
         :param rand_seed:
 
         """
-        self.n_pages = n_pages
+        self.N_time_series = N_time_series
         self.inp = inp
         self.batch_size = batch_size
         self.rand_seed = rand_seed
@@ -293,7 +320,7 @@ class InputPipe:
 
         # Assign all tensors to class variables
         self.true_x, self.time_x, self.norm_x, self.lagged_x, self.true_y, self.time_y, self.norm_y, self.norm_mean, \
-        self.norm_std, self.page_features, self.page_ix = it_tensors
+        self.norm_std, self.page_features, self.page_ix = it_tensors #!!!!!!!!!!!!! names hardcoded ned to change to my fgeatures
 
         self.encoder_features_depth = self.time_x.shape[2].value
 
@@ -305,5 +332,5 @@ class InputPipe:
 
 
 def page_features(inp: VarFeeder):
-    return (inp.hits, inp.pf_agent, inp.pf_country, inp.pf_site,
-            inp.page_ix, inp.page_popularity, inp.year_autocorr, inp.quarter_autocorr)
+    return (inp.counts, inp.pf_agent, inp.pf_country, inp.pf_site,#!!!!!!!!!!!!! names hardcoded ned to change to my fgeatures
+            inp.page_ix, inp.count_median, inp.year_autocorr, inp.quarter_autocorr)

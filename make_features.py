@@ -43,7 +43,7 @@ def read_all(data_type,sampling_period) -> pd.DataFrame:
         df = pd.read_pickle(path)
     else:
         # Official data
-        filename = f'train_2[{data_type}_{sampling_period}]'
+        filename = f'train_2_{data_type}_{sampling_period}'
         df = read_file(filename)
         
         if data_type=='kaggle':
@@ -383,8 +383,10 @@ def run():
     print(f'Using {args.features_set} set of features')
 
     if args.features_set == 'arturius':
+        if args.data_type == 'kaggle':
+            raise Exception('arturius features can only work with data_type "kaggle" since scrapes wikipedia pages')
         tensors = dict(
-            hits=df,
+            counts=df,
             lagged_ix=lagged_ix,
             page_map=page_map,
             page_ix=df.index.values,
@@ -397,19 +399,17 @@ def run():
             dow=dow,#N x 2 array since encoded week periodicity as complex number
         )
     
-    
-    
     elif args.features_set == 'simple':
         tensors = dict(
-            hits=df,
+            counts=df,
             count_median=count_median,#this is just the median feature, can put in others too
             dow=dow,
         )    
         
     elif (args.features_set == 'full') or (args.features_set == 'full_w_context'):
         tensors = dict(
-            hits=df,
-            page_ix=df.index.values,
+            counts=df,
+            page_ix=df.index.values,#!!!!!! 
 
             year_autocorr=year_autocorr,
             quarter_autocorr=quarter_autocorr,

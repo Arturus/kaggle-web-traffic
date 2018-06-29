@@ -415,10 +415,10 @@ def train(name, hparams, multi_gpu=False, n_models=1, train_completeness_thresho
     with tf.device("/cpu:0"):
         inp = VarFeeder.read_vars("data/vars")
         if side_split:
-            splitter = Splitter(page_features(inp), inp.page_map, 3, train_sampling=train_sampling,
+            splitter = Splitter(page_features(inp), inp.page_map, 3, train_sampling=train_sampling,#!!!!!!!!!!!! will need to edit page_features function    and get rid of page_map
                                 test_sampling=eval_sampling, seed=seed)
         else:
-            splitter = FakeSplitter(page_features(inp), 3, seed=seed, test_sampling=eval_sampling)
+            splitter = FakeSplitter(page_features(inp), 3, seed=seed, test_sampling=eval_sampling) #!!!!!!!!!!!! will need to edit page_features function
 
     real_train_pages = splitter.splits[0].train_size
     real_eval_pages = splitter.splits[0].test_size
@@ -440,7 +440,7 @@ def train(name, hparams, multi_gpu=False, n_models=1, train_completeness_thresho
         with tf.variable_scope('input') as inp_scope:
             with tf.device("/cpu:0"):
                 split = splitter.splits[index]
-                pipe = InputPipe(inp, features=split.train_set, n_pages=split.train_size,
+                pipe = InputPipe(inp, features=split.train_set, N_time_series=split.train_size,#!!!!!!!!!!!!!!!! page_features
                                  mode=ModelMode.TRAIN, batch_size=batch_size, n_epoch=None, verbose=verbose,
                                  train_completeness_threshold=train_completeness_threshold,
                                  predict_completeness_threshold=train_completeness_threshold, train_window=train_window,
@@ -449,7 +449,7 @@ def train(name, hparams, multi_gpu=False, n_models=1, train_completeness_thresho
                                  back_offset=predict_window if forward_split else 0)
                 inp_scope.reuse_variables()
                 if side_split:
-                    side_eval_pipe = InputPipe(inp, features=split.test_set, n_pages=split.test_size,
+                    side_eval_pipe = InputPipe(inp, features=split.test_set, N_time_series=split.test_size,#!!!!!!!!!!!!!!!! page_features
                                                mode=ModelMode.EVAL, batch_size=eval_batch_size, n_epoch=None,
                                                verbose=verbose, predict_window=predict_window,
                                                train_completeness_threshold=0.01, predict_completeness_threshold=0,
@@ -458,7 +458,7 @@ def train(name, hparams, multi_gpu=False, n_models=1, train_completeness_thresho
                 else:
                     side_eval_pipe = None
                 if forward_split:
-                    forward_eval_pipe = InputPipe(inp, features=split.test_set, n_pages=split.test_size,
+                    forward_eval_pipe = InputPipe(inp, features=split.test_set, N_time_series=split.test_size,#!!!!!!!!!!!!!!!! page_features
                                                   mode=ModelMode.EVAL, batch_size=eval_batch_size, n_epoch=None,
                                                   verbose=verbose, predict_window=predict_window,
                                                   train_completeness_threshold=0.01, predict_completeness_threshold=0,
@@ -581,7 +581,7 @@ def train(name, hparams, multi_gpu=False, n_models=1, train_completeness_thresho
 
         for epoch in range(max_epoch):
 
-            # n_steps = pusher.n_pages // batch_size
+            # n_steps = pusher.N_time_series // batch_size
             if tqdm:
                 tqr = trange(steps_per_epoch, desc="%2d" % (epoch + 1), leave=False)
             else:
@@ -665,7 +665,7 @@ def predict(checkpoints, hparams, return_x=False, verbose=False, predict_window=
     with tf.variable_scope('input') as inp_scope:
         with tf.device("/cpu:0"):
             inp = VarFeeder.read_vars("data/vars")
-            pipe = InputPipe(inp, page_features(inp), inp.n_pages, mode=ModelMode.PREDICT, batch_size=batch_size,
+            pipe = InputPipe(inp, page_features(inp), inp.N_time_series, mode=ModelMode.PREDICT, batch_size=batch_size, #!!!!!!!!!!!!!!!! page_features
                              n_epoch=1, verbose=verbose,
                              train_completeness_threshold=0.01,
                              predict_window=predict_window,
