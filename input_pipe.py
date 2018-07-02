@@ -105,8 +105,11 @@ class InputPipe:
 
         # cut day of week
         if self.inp.dow:
-            cropped_dow = self.inp.dow[start:end] #!!!!!!! only if using dow feature [sampling daily]
-            #!!!!!!!!!!!! do same for moy , woy if using those features
+            cropped_dow = self.inp.dow[start:end]
+        if self.inp.woy:
+            cropped_woy = self.inp.woy[start:end]
+
+
 
         if self.inp.lagged_ix:
             # Cut lagged counts
@@ -127,7 +130,7 @@ class InputPipe:
 
         # Convert NaN to zero in for train data
         x_counts = tf.where(tf.is_nan(x_counts), tf.zeros_like(x_counts), x_counts)
-        return x_counts, y_counts, cropped_dow, lagged_hit #!!!!!!!!!!!! return other cropped time dependent features as well
+        return x_counts, y_counts, cropped_dow, lagged_hit, cropped_woy #!!!!!!!!!!!! return other cropped time dependent features as well    #added cropped_woy
 
 
 
@@ -178,8 +181,8 @@ class InputPipe:
         keep = zeros_x <= self.max_train_empty
         return keep
 
-    def make_features(self, x_counts, y_counts, dow, lagged_counts, pf_agent, pf_country, pf_site, page_ix,
-                      count_median, year_autocorr, quarter_autocorr): #!!!!!!!!!!!! if kaggle feats as is
+    def make_features(self, x_counts, y_counts, dow, lagged_counts, woy, pf_agent, pf_country, pf_site, page_ix,
+                      count_median, year_autocorr, quarter_autocorr, count_pctl_100): #!!!!!!!!!!!! if kaggle feats as is   #!!!! added woy, count_pctl_100
         """
         Main method. Assembles input data into final tensors
         
@@ -204,6 +207,9 @@ class InputPipe:
         
         
         if self.sampling_period == 'daily':
+            print(dow)
+            print()
+            print(woy)
             x_dow, y_dow = tf.split(dow, [self.train_window, self.predict_window], axis=0)
             x_woy, y_woy = tf.split(woy, [self.train_window, self.predict_window], axis=0) #need to see how to fit in woy into inputs to this func
         elif self.sampling_period == 'weekly':
@@ -225,13 +231,13 @@ class InputPipe:
             x_lagged, y_lagged = tf.split(norm_lagged_counts, [self.train_window, self.predict_window], axis=0)
     
             # Combine all page features into single tensor
-            scalar_features = tf.stack([count_median, quarter_autocorr, year_autocorr])#!!!!!!! if kaggle feats. Else need also the oher quntiles too
+            scalar_features = tf.stack([count_median, quarter_autocorr, year_autocorr, count_pctl_100])#!!!!!!! if kaggle feats. Else need also the oher quntiles too
             flat_features = tf.concat([pf_agent, pf_country, pf_site, scalar_features], axis=0) 
             series_features = tf.expand_dims(flat_features, 0)
 
 
 
-        if self.features_set == 'full':
+        """if self.features_set == 'full':
             # Split lagged counts to train and test
             x_lagged, y_lagged = tf.split(norm_lagged_counts, [self.train_window, self.predict_window], axis=0)
     
@@ -242,9 +248,8 @@ class InputPipe:
                                         quarter_autocorr, year_autocorr])
             flat_features = tf.concat([scalar_features], axis=0) 
             series_features = tf.expand_dims(flat_features, 0)
-
         #!!!!!!! also do for simple, full w context 
-        #....
+        #...."""
 
 
 
@@ -256,6 +261,7 @@ class InputPipe:
             # [n_days] -> [n_days, 1]
             tf.expand_dims(norm_x_counts, -1),
             x_dow,
+            x_woy, #!!!!!! added
             x_lagged,
             # Stretch series_features to all training days
             # [1, features] -> [n_days, features]
@@ -266,6 +272,7 @@ class InputPipe:
         y_features = tf.concat([
             # [n_days] -> [n_days, 1]
             y_dow,
+            y_woy, #!!!!!! added 
             y_lagged,
             # Stretch series_features to all testing days
             # [1, features] -> [n_days, features]
@@ -286,6 +293,8 @@ class InputPipe:
                  train_skip_first=0, rand_seed=None):
         """
         Create data preprocessing pipeline
+        features_set  -  arturius, simple, full, full_w_context
+        sampling_period  -  daily, weekly, monthly
         :param inp: Raw input data
         :param features: Features tensors (subset of data in inp)
         :param N_time_series: Total number of pages
@@ -381,7 +390,10 @@ def page_features(inp: VarFeeder, features_set):
     
     if features_set=='arturius':
         d = (inp.counts, inp.pf_agent, inp.pf_country, inp.pf_site,
-                inp.page_ix, inp.count_median, inp.year_autocorr, inp.quarter_autocorr)
+                inp.page_ix, inp.count_median, inp.year_autocorr, inp.quarter_autocorr,
+#                inp.woy, 
+                inp.count_pctl_100
+                )#!!!!!!!!!!!! ading 2 more
         
     elif features_set=='simple':
         raise Exception('not ready yet')

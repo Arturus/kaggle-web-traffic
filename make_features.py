@@ -383,7 +383,7 @@ def run():
     print(f'Using {args.features_set} set of features')
 
     if args.features_set == 'arturius':
-        if args.data_type == 'kaggle':
+        if args.data_type != 'kaggle':
             raise Exception('arturius features can only work with data_type "kaggle" since scrapes wikipedia pages')
         tensors = dict(
             counts=df,
@@ -397,6 +397,9 @@ def run():
             year_autocorr=year_autocorr,
             quarter_autocorr=quarter_autocorr,
             dow=dow,#N x 2 array since encoded week periodicity as complex number
+            
+            woy=woy,#!!!!!!!!
+            count_pctl_100=percentiles[5],#max #!!!!!!!!!!!!!!!! just to see what happens: apend one of my features.
         )
     
     elif args.features_set == 'simple':
