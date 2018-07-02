@@ -110,7 +110,7 @@ def single_autocorr(series, lag):
 def batch_autocorr(data, lag, starts, ends, threshold, backoffset=0):
     """
     Calculate autocorrelation for batch (many time series at once)
-    :param data: Time series, shape [n_pages, n_days]
+    :param data: Time series, shape [N_time_series, n_days]
     :param lag: Autocorrelation lag
     :param starts: Start index for each series
     :param ends: End index for each series
@@ -146,14 +146,14 @@ def find_start_end(data: np.ndarray):
     """
     Calculates start and end of real traffic data. Start is an index of first non-zero, non-NaN value,
      end is index of last non-zero, non-NaN value
-    :param data: Time series, shape [n_pages, n_days]
+    :param data: Time series, shape [N_time_series, n_days]
     :return:
     """
-    n_pages = data.shape[0]
+    N_time_series = data.shape[0]
     n_days = data.shape[1]
-    start_idx = np.full(n_pages, -1, dtype=np.int32)
-    end_idx = np.full(n_pages, -1, dtype=np.int32)
-    for page in range(n_pages):
+    start_idx = np.full(N_time_series, -1, dtype=np.int32)
+    end_idx = np.full(N_time_series, -1, dtype=np.int32)
+    for page in range(N_time_series):
         # scan from start to the end
         for day in range(n_days):
             if not np.isnan(data[page, day]) and data[page, day] > 0:
@@ -248,7 +248,7 @@ def encode_page_features(df) -> Dict[str, pd.DataFrame]:
     """
     Applies one-hot encoding to page features and normalises result
     :param df: page features DataFrame (one column per feature)
-    :return: dictionary feature_name:encoded_values. Encoded values is [n_pages,n_values] array
+    :return: dictionary feature_name:encoded_values. Encoded values is [N_time_series,n_values] array
     """
     def encode(column) -> pd.DataFrame:
         one_hot = pd.get_dummies(df[column], drop_first=False)
@@ -462,7 +462,7 @@ def run():
     plain = dict(
         features_days=len(features_days),
         data_days=len(df.columns),
-        n_pages=len(df),
+        N_time_series=len(df),
         data_start=data_start,
         data_end=data_end,
         features_end=features_end

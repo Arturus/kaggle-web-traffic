@@ -25,6 +25,10 @@ import hparams
 
 
 
+FEATURES_SET = 'arturius'# 'arturius' 'simple' 'full'
+
+
+
 
 # =============================================================================
 # Performance Metrics
@@ -65,7 +69,7 @@ paths = [p for p in tf.train.get_checkpoint_state('data/cpt/s32').all_model_chec
 t_preds = []
 for tm in range(3):
     tf.reset_default_graph()
-    t_preds.append(predict(paths, build_hparams(hparams.params_s32), back_offset=0, predict_window=63,
+    t_preds.append(predict(FEATURES_SET, paths, build_hparams(hparams.params_s32), back_offset=0, predict_window=63,
                     n_models=3, target_model=tm, seed=2, batch_size=2048, asgd=True))
 
 

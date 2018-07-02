@@ -190,16 +190,27 @@ class InputPipe:
         
             def make_features(self, ts_dynamic, ts_static, context):
         
-        """
-        
+                
         # Split day of week to train and test
         if ts_dynamic['dow']:
             x_dow, y_dow = tf.split(dow, [self.train_window, self.predict_window], axis=0)
         if ts_dynamic['woy']:
             x_woy, y_woy = tf.split(woy, [self.train_window, self.predict_window], axis=0)
         if ts_dynamic['moy']:
-            x_moy, y_moy = tf.split(moy, [self.train_window, self.predict_window], axis=0)            
-            
+            x_moy, y_moy = tf.split(moy, [self.train_window, self.predict_window], axis=0)                    
+                
+        """
+        
+        
+        
+        if self.sampling_period == 'daily':
+            x_dow, y_dow = tf.split(dow, [self.train_window, self.predict_window], axis=0)
+            x_woy, y_woy = tf.split(woy, [self.train_window, self.predict_window], axis=0) #need to see how to fit in woy into inputs to this func
+        elif self.sampling_period == 'weekly':
+            x_woy, y_woy = tf.split(woy, [self.train_window, self.predict_window], axis=0)
+        elif self.sampling_period == 'monthly':
+            x_moy, y_moy = tf.split(moy, [self.train_window, self.predict_window], axis=0)
+
 
         # Normalize counts
         mean = tf.reduce_mean(x_counts)
@@ -208,14 +219,37 @@ class InputPipe:
         norm_y_counts = (y_counts - mean) / std
         norm_lagged_counts = (lagged_counts - mean) / std   #!!!!!! seems like there is some leakage in time here??? The y lagged are normalized in a way that is a function of the y data ??
 
-        # Split lagged counts to train and test
-        if ts_dynamic['lagged_ix']:
-            x_lagged, y_lagged = tf.split(norm_lagged_counts, [self.train_window, self.predict_window], axis=0)
 
-        # Combine all page features into single tensor
-        stacked_features = tf.stack([count_median, quarter_autocorr, year_autocorr])#!!!!!!! if kaggle feats. Else need also the oher quntiles too
-        flat_page_features = tf.concat([pf_agent, pf_country, pf_site, stacked_features], axis=0) 
-        page_features = tf.expand_dims(flat_page_features, 0)
+        if self.features_set == 'arturius':
+            # Split lagged counts to train and test
+            x_lagged, y_lagged = tf.split(norm_lagged_counts, [self.train_window, self.predict_window], axis=0)
+    
+            # Combine all page features into single tensor
+            scalar_features = tf.stack([count_median, quarter_autocorr, year_autocorr])#!!!!!!! if kaggle feats. Else need also the oher quntiles too
+            flat_features = tf.concat([pf_agent, pf_country, pf_site, scalar_features], axis=0) 
+            series_features = tf.expand_dims(flat_features, 0)
+
+
+
+        if self.features_set == 'full':
+            # Split lagged counts to train and test
+            x_lagged, y_lagged = tf.split(norm_lagged_counts, [self.train_window, self.predict_window], axis=0)
+    
+            # Combine all page features into single tensor
+            
+            scalar_features = tf.stack([count_median, count_variance, \
+                                        count_pctl_0, count_pctl_5, count_pctl_25, count_pctl_75, count_pctl_95, count_pctl_100, \
+                                        quarter_autocorr, year_autocorr])
+            flat_features = tf.concat([scalar_features], axis=0) 
+            series_features = tf.expand_dims(flat_features, 0)
+
+        #!!!!!!! also do for simple, full w context 
+        #....
+
+
+
+        #Any time dependent feature need to be split into x [train] and y [test]
+        #the time INdependent features [constant per fixture] will just be tiled same way either way except diff lengths
 
         # Train features
         x_features = tf.concat([
@@ -223,9 +257,9 @@ class InputPipe:
             tf.expand_dims(norm_x_counts, -1),
             x_dow,
             x_lagged,
-            # Stretch page_features to all training days
+            # Stretch series_features to all training days
             # [1, features] -> [n_days, features]
-            tf.tile(page_features, [self.train_window, 1])
+            tf.tile(series_features, [self.train_window, 1])
         ], axis=1)
 
         # Test features
@@ -233,20 +267,20 @@ class InputPipe:
             # [n_days] -> [n_days, 1]
             y_dow,
             y_lagged,
-            # Stretch page_features to all testing days
+            # Stretch series_features to all testing days
             # [1, features] -> [n_days, features]
-            tf.tile(page_features, [self.predict_window, 1])
+            tf.tile(series_features, [self.predict_window, 1])
         ], axis=1)
 
         #!!!!! why no lagged_y alnoe, only in y_features??? 
         #!!!! why no norm_y_counts ?????
-        return x_counts, x_features, norm_x_counts, x_lagged, y_counts, y_features, norm_y_counts, mean, std, flat_page_features, page_ix
+        return x_counts, x_features, norm_x_counts, x_lagged, y_counts, y_features, norm_y_counts, mean, std, flat_features, page_ix
         #later on the above is assigned to:
         #self.true_x, self.time_x, self.norm_x, self.lagged_x, self.true_y, self.time_y, self.norm_y, self.norm_mean, \
-        #self.norm_std, self.page_features, self.page_ix = it_tensors
+        #self.norm_std, self.series_features, self.page_ix = it_tensors
 
 
-    def __init__(self, inp: VarFeeder, features: Iterable[tf.Tensor], N_time_series: int, mode: ModelMode, n_epoch=None,
+    def __init__(self, features_set, sampling_period, inp: VarFeeder, features: Iterable[tf.Tensor], N_time_series: int, mode: ModelMode, n_epoch=None,
                  batch_size=127, runs_in_burst=1, verbose=True, predict_window=60, train_window=500,
                  train_completeness_threshold=1, predict_completeness_threshold=1, back_offset=0,
                  train_skip_first=0, rand_seed=None):
@@ -269,6 +303,10 @@ class InputPipe:
         :param rand_seed:
 
         """
+        
+        self.features_set = features_set
+        self.sampling_period = sampling_period
+        
         self.N_time_series = N_time_series
         self.inp = inp
         self.batch_size = batch_size
@@ -319,8 +357,16 @@ class InputPipe:
         it_tensors = self.iterator.get_next()
 
         # Assign all tensors to class variables
-        self.true_x, self.time_x, self.norm_x, self.lagged_x, self.true_y, self.time_y, self.norm_y, self.norm_mean, \
-        self.norm_std, self.page_features, self.page_ix = it_tensors #!!!!!!!!!!!!! names hardcoded ned to change to my fgeatures
+        if self.features_set=='arturius':
+            self.true_x, self.time_x, self.norm_x, self.lagged_x, self.true_y, self.time_y, self.norm_y, self.norm_mean, \
+            self.norm_std, self.series_features, self.page_ix = it_tensors #!!!!!!!!!!!!! names hardcoded ned to change to my fgeatures
+        if self.features_set=='simple':
+            pass
+        if self.features_set=='full':
+            pass
+        if self.features_set=='full_w_context':
+            pass
+        
 
         self.encoder_features_depth = self.time_x.shape[2].value
 
@@ -331,6 +377,35 @@ class InputPipe:
         session.run(self.iterator.initializer)
 
 
-def page_features(inp: VarFeeder):
-    return (inp.counts, inp.pf_agent, inp.pf_country, inp.pf_site,#!!!!!!!!!!!!! names hardcoded ned to change to my fgeatures
-            inp.page_ix, inp.count_median, inp.year_autocorr, inp.quarter_autocorr)
+def page_features(inp: VarFeeder, features_set):
+    
+    if features_set=='arturius':
+        d = (inp.counts, inp.pf_agent, inp.pf_country, inp.pf_site,
+                inp.page_ix, inp.count_median, inp.year_autocorr, inp.quarter_autocorr)
+        
+    elif features_set=='simple':
+        raise Exception('not ready yet')
+    elif features_set=='full':
+        d = (inp.counts,
+            inp.count_median, inp.count_variance,
+            inp.count_pctl_0,
+            inp.count_pctl_5,
+            inp.count_pctl_25,
+            inp.count_pctl_75,
+            inp.count_pctl_95,
+            inp.count_pctl_100,
+                inp.page_ix, inp.year_autocorr, inp.quarter_autocorr)
+    elif features_set=='full_w_context':
+        raise Exception('not ready yet')
+    
+    
+    #!!!! does it actually need the dow, moy features???
+    #if this is required then would need the sample_period as an input to this function [follw pattern of features_set]
+    """if sample_period=='daily':
+        d += (inp.dow,inp.woy)
+    elif sample_period=='weekly':
+        d += (inp.dow,inp.woy)
+    elif sample_period=='monthly':
+        d += (inp.dow,inp.woy)"""  
+    
+    return d
