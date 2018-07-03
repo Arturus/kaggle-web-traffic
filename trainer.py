@@ -415,10 +415,10 @@ def train(features_set, sampling_period, name, hparams, multi_gpu=False, n_model
     with tf.device("/cpu:0"):
         inp = VarFeeder.read_vars("data/vars")
         if side_split:
-            splitter = Splitter(page_features(inp, features_set), inp.page_map, 3, train_sampling=train_sampling,#!!!!!!!!!!!! will need to edit page_features function    and get rid of page_map
+            splitter = Splitter(page_features(inp, features_set), inp.page_map, 3, train_sampling=train_sampling,
                                 test_sampling=eval_sampling, seed=seed)
         else:
-            splitter = FakeSplitter(page_features(inp, features_set), 3, seed=seed, test_sampling=eval_sampling) #!!!!!!!!!!!! will need to edit page_features function
+            splitter = FakeSplitter(page_features(inp, features_set), 3, seed=seed, test_sampling=eval_sampling)
 
     real_train_pages = splitter.splits[0].train_size
     real_eval_pages = splitter.splits[0].test_size
@@ -440,7 +440,7 @@ def train(features_set, sampling_period, name, hparams, multi_gpu=False, n_model
         with tf.variable_scope('input') as inp_scope:
             with tf.device("/cpu:0"):
                 split = splitter.splits[index]
-                pipe = InputPipe(features_set, sampling_period, inp, features=split.train_set, N_time_series=split.train_size,#!!!!!!!!!!!!!!!! page_features
+                pipe = InputPipe(features_set, sampling_period, inp, features=split.train_set, N_time_series=split.train_size,
                                  mode=ModelMode.TRAIN, batch_size=batch_size, n_epoch=None, verbose=verbose,
                                  train_completeness_threshold=train_completeness_threshold,
                                  predict_completeness_threshold=train_completeness_threshold, train_window=train_window,
@@ -449,7 +449,7 @@ def train(features_set, sampling_period, name, hparams, multi_gpu=False, n_model
                                  back_offset=predict_window if forward_split else 0)
                 inp_scope.reuse_variables()
                 if side_split:
-                    side_eval_pipe = InputPipe(features_set, sampling_period, inp, features=split.test_set, N_time_series=split.test_size,#!!!!!!!!!!!!!!!! page_features
+                    side_eval_pipe = InputPipe(features_set, sampling_period, inp, features=split.test_set, N_time_series=split.test_size,
                                                mode=ModelMode.EVAL, batch_size=eval_batch_size, n_epoch=None,
                                                verbose=verbose, predict_window=predict_window,
                                                train_completeness_threshold=0.01, predict_completeness_threshold=0,
@@ -458,7 +458,7 @@ def train(features_set, sampling_period, name, hparams, multi_gpu=False, n_model
                 else:
                     side_eval_pipe = None
                 if forward_split:
-                    forward_eval_pipe = InputPipe(features_set, sampling_period, inp, features=split.test_set, N_time_series=split.test_size,#!!!!!!!!!!!!!!!! page_features
+                    forward_eval_pipe = InputPipe(features_set, sampling_period, inp, features=split.test_set, N_time_series=split.test_size,
                                                   mode=ModelMode.EVAL, batch_size=eval_batch_size, n_epoch=None,
                                                   verbose=verbose, predict_window=predict_window,
                                                   train_completeness_threshold=0.01, predict_completeness_threshold=0,

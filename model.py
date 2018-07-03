@@ -67,6 +67,8 @@ def make_encoder(time_inputs, encoder_features_depth, is_train, hparams, seed, t
         return RNN(num_layers=hparams.encoder_rnn_layers, num_units=hparams.rnn_depth,
                    input_size=encoder_features_depth,
                    direction='unidirectional', #Let's try bidirectional as well, or ,ay as well try keeping unidirectional but with order reversed, just see what happens
+                   #assume merge mode default is concat??
+                   #need to fix dimensions error. If could change merge mode to sum or mean or something then at least output dimension is same so might be easiest way to avoid  error ?
                    dropout=hparams.encoder_dropout if is_train else 0, seed=seed)
 
     static_p_size = cuda_params_size(build_rnn)

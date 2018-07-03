@@ -48,7 +48,7 @@ GK modifications for own data:
 4. $python3 PREPROCESS.py
 5. $python3 make_features.py data/vars kaggle daily arturius --add_days=63 #need to specify the data directory (data/vars) and feature_set {kaggle, simple, full, full_w_context} depending on using default Arturius kaggle vs. own custom for this application; and specify sampling period
 python3 make_features.py data/vars kaggle daily full --add_days=63
-
+python3 make_features.py data/vars ours daily full --add_days=63
 
 #no reason to expect 10000 to 11500 is good range to save out. View loss along the way
 python3 trainer.py arturius daily --name s32 --hparam_set=s32 --n_models=3 --asgd_decay=0.99 --max_steps=11500 --save_from_step=10000

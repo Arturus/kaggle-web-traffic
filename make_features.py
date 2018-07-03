@@ -412,6 +412,8 @@ def run():
     elif (args.features_set == 'full') or (args.features_set == 'full_w_context'):
         tensors = dict(
             counts=df,
+            lagged_ix=lagged_ix,
+            page_map=np.zeros(len(df)),#just set to a dummy all 0's
             page_ix=df.index.values,#!!!!!! 
 
             year_autocorr=year_autocorr,
