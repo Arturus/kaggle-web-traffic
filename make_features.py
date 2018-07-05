@@ -339,6 +339,11 @@ def run():
     # =============================================================================
     # TIME-VARYING FEATURES
     # =============================================================================
+    #Could determine week of year number in several ways: 1) as in Pandas as starting on a particular day of week,
+    # 2. just use day of year / 365
+    WEEK_NUMBER_METHOD = 'floor7'#'pandas' #'floor7'
+    WEEK_NUMBER_MAX = 53. #52.
+    
     
     if args.sampling_period=='daily':
         
@@ -349,19 +354,30 @@ def run():
         dow = np.stack([np.cos(dow_norm), np.sin(dow_norm)], axis=-1)
         
         #index of week number, when sampling at DAILY level
-        year_period = 53. / (2 * np.pi) #!!!! need to be carefuly non-uniform weeks [52 has 10 days ???]  ---> actually in pandas numbering goes to 53, depending on start day of week for that year
-        woy_norm = features_days.weekofyear.values / year_period #not sure if by default this starts on Monday vs Sunday
+        if WEEK_NUMBER_METHOD=='pandas':
+            week = features_days.weekofyear.values
+        elif WEEK_NUMBER_METHOD=='floor7':
+            week = np.floor((features_days.dayofyear.values - 1.) /7.)
+        year_period = WEEK_NUMBER_MAX / (2 * np.pi) #!!!! need to be carefuly non-uniform weeks [52 has 10 days ???]  ---> actually in pandas numbering goes to 53, depending on start day of week for that year
+        woy_norm = week / year_period #not sure if by default this starts on Monday vs Sunday
         woy = np.stack([np.cos(woy_norm), np.sin(woy_norm)], axis=-1)
+    
+        #To catch longer term trending data, can also include year number. [depending on size of train / prediction windows and random sampling boundaries could be same value over whole series]
+        year_nmumber = features_days.year
     
     
     if args.sampling_period=='weekly':
         #index of week number, when sampling at WEEKLY level (this is different than above)
         fff = pd.date_range(data_start, features_end, freq='W')
         #!!!!!!!!!!!!! still need to worry about alignment ... 
-        year_period = 53. / (2 * np.pi) #!!!! need to be carefuly non-uniform weeks [52 has 10 days ???]  ---> actually in pandas numbering goes to 53, depending on start day of week for that year
-        woy_norm = fff.weekofyear.values / year_period #not sure if by default this starts on Monday vs Sunday
-        woy = np.stack([np.cos(woy_norm), np.sin(woy_norm)], axis=-1)    
-    
+        if WEEK_NUMBER_METHOD=='pandas':
+            week = fff.weekofyear.values
+        elif WEEK_NUMBER_METHOD=='floor7':
+            week = np.floor((fff.dayofyear.values - 1.) /7.)
+        year_period = WEEK_NUMBER_MAX / (2 * np.pi) #!!!! need to be carefuly non-uniform weeks [52 has 10 days ???]  ---> actually in pandas numbering goes to 53, depending on start day of week for that year
+        woy_norm = week / year_period #not sure if by default this starts on Monday vs Sunday
+        woy = np.stack([np.cos(woy_norm), np.sin(woy_norm)], axis=-1)
+        year_nmumber = features_days.year
     
     if args.sampling_period=='monthly':
         #month index (only used if sampling monthly)
@@ -369,8 +385,8 @@ def run():
         period = 12. / (2 * np.pi) #!!!! need to be carefuly non-uniform weeks [52 has 10 days ???]  ---> actually in pandas numbering goes to 53, depending on start day of week for that year
         moy_norm = fff.month.values / period #not sure if by default this starts on Monday vs Sunday
         moy = np.stack([np.cos(moy_norm), np.sin(moy_norm)], axis=-1)    
-    
-    
+        year_nmumber = features_days.year
+
     
     
     # Assemble indices for quarterly lagged data

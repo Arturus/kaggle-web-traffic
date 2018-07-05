@@ -458,7 +458,7 @@ def train(features_set, sampling_period, name, hparams, multi_gpu=False, n_model
                 else:
                     side_eval_pipe = None
                 if forward_split:
-                    forward_eval_pipe = InputPipe(features_set, sampling_period, inp, features=split.test_set, N_time_series=split.test_size,
+                    forward_eval_pipe = InputPipe(features_set, sampling_period, inp, features=split.test_set, N_time_series=split.test_size,#!!!!!!!!!!!!!!!! page_features
                                                   mode=ModelMode.EVAL, batch_size=eval_batch_size, n_epoch=None,
                                                   verbose=verbose, predict_window=predict_window,
                                                   train_completeness_threshold=0.01, predict_completeness_threshold=0,
