@@ -493,6 +493,8 @@ def run():
 
     print(tensors)
     print(plain)
+    print(tensors.keys())
+    print(plain.keys())
 
     # Store data to the disk
     VarFeeder(args.data_dir, tensors, plain)
