@@ -226,14 +226,6 @@ class InputPipe:
         """
         Main method. Assembles input data into final tensors
         """
-#    def make_features__arturius(self, x_counts, y_counts, lagged_counts, dow, woy, moy, pf_agent, pf_country, pf_site, page_ix,
-#                                count_median, year_autocorr, quarter_autocorr, count_pctl_100):
-#        
-#    def make_features__arturius(self, x_counts, y_counts, dow, lagged_counts, woy, moy, pf_agent, pf_country, pf_site, page_ix,
-#                      count_median, year_autocorr, quarter_autocorr, count_pctl_0, count_pctl_5, count_pctl_25, 
-#                      count_pctl_75, count_pctl_95, count_pctl_100, count_variance):  
-        
-        
         # =============================================================================
         # Unpack the vars depending on which features_set - sampling_period
         # The order needs to match the output of the cut method.
@@ -259,8 +251,6 @@ class InputPipe:
                 x_counts, y_counts, lagged_counts, woy, pf_agent, pf_country, pf_site, page_ix, count_median, year_autocorr, quarter_autocorr, count_pctl_100 = args        
             elif self.sampling_period == 'monthly':
                 x_counts, y_counts, lagged_counts, moy, pf_agent, pf_country, pf_site, page_ix, count_median, year_autocorr, quarter_autocorr, count_pctl_100 = args 
-        
-        
         
         # =============================================================================
         # Do train - predict splits
@@ -408,14 +398,11 @@ class InputPipe:
 
         # Choose right cutter function for current ModelMode
         cutter = {ModelMode.TRAIN: self.cut_train, ModelMode.EVAL: self.cut_eval, ModelMode.PREDICT: self.cut_eval}
-        #Choose the right feature maker function, depending on feature_set used:
-#        feature_maker = {'arturius': self.make_features__arturius, 'full': self.make_features__full}
         # Create dataset, transform features and assemble batches
         root_ds = tf.data.Dataset.from_tensor_slices(tuple(features)).repeat(n_epoch)
         batch = (root_ds
                  .map(cutter[mode])
                  .filter(self.reject_filter)
-                 #.map(feature_maker[self.features_set], num_parallel_calls=num_threads)
                  .map(self.make_features, num_parallel_calls=num_threads)
                  .batch(batch_size)
                  .prefetch(runs_in_burst * 2)
@@ -424,16 +411,17 @@ class InputPipe:
         it_tensors = self.iterator.get_next()
 
         # Assign all tensors to class variables
-        if self.features_set=='arturius' or self.features_set=='full':
-            self.true_x, self.time_x, self.norm_x, self.lagged_x, self.true_y, self.time_y, self.norm_y, self.norm_mean, \
-            self.norm_std, self.series_features, self.page_ix = it_tensors #!!!!!!!!!!!!! names hardcoded ned to change to my fgeatures
-        if self.features_set=='simple':
+#        if self.features_set=='arturius' or self.features_set=='full':
+        #self.time_x is the tensor of features, regardless of which feature set, so this can stay same.
+        #But if not doing lagged then can return None for that ???
+        self.true_x, self.time_x, self.norm_x, self.lagged_x, self.true_y, self.time_y, self.norm_y, self.norm_mean, \
+        self.norm_std, self.series_features, self.page_ix = it_tensors #!!!!!!!!!!!!! names hardcoded ned to change to my fgeatures
+        """if self.features_set=='simple':
             pass
 #        if self.features_set=='full':
 #            pass
         if self.features_set=='full_w_context':
-            pass
-        
+            pass"""
 
         self.encoder_features_depth = self.time_x.shape[2].value
         print('self.encoder_features_depth',self.encoder_features_depth)
