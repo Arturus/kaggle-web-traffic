@@ -50,8 +50,19 @@ GK modifications for own data:
 python3 make_features.py data/vars kaggle daily full --add_days=63
 python3 make_features.py data/vars ours daily full --add_days=63
 
+#Just in case making new features
+cd data
+rm -R vars/
+rm -R cpt/
+rm -R cpt_tmp/
+rm -R logs/
+rm *.pkl
+cd ..
+ll data/
+
 #no reason to expect 10000 to 11500 is good range to save out. View loss along the way
 python3 trainer.py arturius daily --name s32 --hparam_set=s32 --n_models=3 --asgd_decay=0.99 --max_steps=11500 --save_from_step=10000
+python3 trainer.py full daily --name s32 --hparam_set=s32 --n_models=3 --asgd_decay=0.99 --max_steps=11500 --save_from_step=10000
 --name TEST_attn_head --hparam_set=TEST_attn_head
 --name TEST_stacked --hparam_set=TEST_stacked
 
@@ -65,9 +76,8 @@ python3 trainer.py arturius daily --name s32 --hparam_set=s32 --n_models=3 --asg
 
 
 To do:
-0.  -- got working with few examples of our added features (one static, one time varying 2D), now just organize programmatically
 0. save log files to view SMAPE etc metrics during training
 1. finish PREPROCESS.py to do better imputation using basic forecasting method [just use STL or Theta to fill in small gaps; otherwise remove blocks]
-2. PREPROCESS.py  -  allow downsample in time to weekly, monthly
+2. for weekly. monthly inputs, will there be issue in Kaggle code???
 3. Prediction intervals
 4. Architecture improvements

@@ -422,7 +422,7 @@ def train(features_set, sampling_period, name, hparams, multi_gpu=False, n_model
 
     real_train_pages = splitter.splits[0].train_size
     real_eval_pages = splitter.splits[0].test_size
-
+    
     items_per_eval = real_eval_pages * eval_pct
     eval_batches = int(np.ceil(items_per_eval / eval_batch_size))
     steps_per_epoch = real_train_pages // batch_size
@@ -432,8 +432,16 @@ def train(features_set, sampling_period, name, hparams, multi_gpu=False, n_model
     global_step = tf.train.get_or_create_global_step()
     inc_step = tf.assign_add(global_step, 1)
 
-
     all_models: List[ModelTrainerV2] = []
+
+    print('real_train_pages', real_train_pages)
+    print('real_eval_pages', real_eval_pages)
+    print('batch_size', batch_size)
+    print('items_per_eval', items_per_eval)
+    print('eval_batches', eval_batches)
+    print('steps_per_epoch', steps_per_epoch)
+    print('eval_every_step', eval_every_step)
+
 
     def create_model(features_set, sampling_period, scope, index, prefix, seed):
 
@@ -448,11 +456,12 @@ def train(features_set, sampling_period, name, hparams, multi_gpu=False, n_model
                                  rand_seed=seed, train_skip_first=hparams.train_skip_first,
                                  back_offset=predict_window if forward_split else 0)
                 inp_scope.reuse_variables()
+                TCT = .3 #0.01
                 if side_split:
                     side_eval_pipe = InputPipe(features_set, sampling_period, inp, features=split.test_set, N_time_series=split.test_size,
                                                mode=ModelMode.EVAL, batch_size=eval_batch_size, n_epoch=None,
                                                verbose=verbose, predict_window=predict_window,
-                                               train_completeness_threshold=0.01, predict_completeness_threshold=0,
+                                               train_completeness_threshold=TCT, predict_completeness_threshold=0,
                                                train_window=train_window, rand_seed=seed, runs_in_burst=eval_batches,
                                                back_offset=predict_window * (2 if forward_split else 1))
                 else:
@@ -461,7 +470,7 @@ def train(features_set, sampling_period, name, hparams, multi_gpu=False, n_model
                     forward_eval_pipe = InputPipe(features_set, sampling_period, inp, features=split.test_set, N_time_series=split.test_size,#!!!!!!!!!!!!!!!! page_features
                                                   mode=ModelMode.EVAL, batch_size=eval_batch_size, n_epoch=None,
                                                   verbose=verbose, predict_window=predict_window,
-                                                  train_completeness_threshold=0.01, predict_completeness_threshold=0,
+                                                  train_completeness_threshold=TCT, predict_completeness_threshold=0,
                                                   train_window=train_window, rand_seed=seed, runs_in_burst=eval_batches,
                                                   back_offset=predict_window)
                 else:
@@ -637,12 +646,12 @@ def train(features_set, sampling_period, name, hparams, multi_gpu=False, n_model
                 has_best_indicator = '↑'
             else:
                 has_best_indicator = ' '
-            status = "%2d: Best top SMAPE=%.3f%s (%s)" % (
+            status = "%2d: Best top  %.3f%s (%s)" % (
                 epoch + 1, current_top, has_best_indicator,
                 ",".join(["%.3f" % m.top for m in eval_smape.metrics]))
 
             if trainer.has_active():
-                status += ", frwd/side best MAE=%.3f/%.3f, SMAPE=%.3f/%.3f; avg MAE=%.3f/%.3f, SMAPE=%.3f/%.3f, %d am" % \
+                status += ", frwd/side best MAE=%.3f/%.3f, SMAPE=%.3f/%.3f; avg MAE=%.3f/%.3f, SMAPE=%.3f/%.3f, %d active models" % \
                           (eval_mae.best_epoch, eval_mae_side.best_epoch, eval_smape.best_epoch, eval_smape_side.best_epoch,
                            eval_mae.avg_epoch,  eval_mae_side.avg_epoch,  eval_smape.avg_epoch,  eval_smape_side.avg_epoch,
                            trainer.has_active())
