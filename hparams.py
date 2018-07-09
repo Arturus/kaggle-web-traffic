@@ -5,8 +5,8 @@ import re
 params_s32 = dict(
     batch_size=256,
     #train_window=380,
-    #train_window=283,
-    train_window=65,#try 65 w our data to see if allows more samples through filter
+    train_window=283,
+    #train_window=65,#try 65 w our data to see if allows more samples through filter
     train_skip_first=0,
     rnn_depth=267,
     use_attn=False,

@@ -33,7 +33,10 @@ def read_all(data_type,sampling_period) -> pd.DataFrame:
     Reads source data for training/prediction
     """
     def read_file(file):
-        df = read_cached(file).set_index('Page')
+        try:
+            df = read_cached(file).set_index('Page')
+        except AttributeError:
+            raise Exception('File not exist, did you specify correct sampling_period?')        
         df.columns = df.columns.astype('M8[D]')
         return df
 
@@ -345,47 +348,47 @@ def run():
     WEEK_NUMBER_MAX = 53. #52.
     
     
+    features_times = pd.date_range(data_start, features_end, freq='D')
+    
     if args.sampling_period=='daily':
-        
-        features_days = pd.date_range(data_start, features_end, freq='D')
-        #dow = normalize(features_days.dayofweek.values)
+        #dow = normalize(features_times.dayofweek.values)
         week_period = 7 / (2 * np.pi)
-        dow_norm = features_days.dayofweek.values / week_period #S.dayofweek gives day of the week with Monday=0, Sunday=6
+        dow_norm = features_times.dayofweek.values / week_period #S.dayofweek gives day of the week with Monday=0, Sunday=6
         dow = np.stack([np.cos(dow_norm), np.sin(dow_norm)], axis=-1)
         
         #index of week number, when sampling at DAILY level
         if WEEK_NUMBER_METHOD=='pandas':
-            week = features_days.weekofyear.values
+            week = features_times.weekofyear.values
         elif WEEK_NUMBER_METHOD=='floor7':
-            week = np.floor((features_days.dayofyear.values - 1.) /7.)
+            week = np.floor((features_times.dayofyear.values - 1.) /7.)
         year_period = WEEK_NUMBER_MAX / (2 * np.pi) #!!!! need to be carefuly non-uniform weeks [52 has 10 days ???]  ---> actually in pandas numbering goes to 53, depending on start day of week for that year
         woy_norm = week / year_period #not sure if by default this starts on Monday vs Sunday
         woy = np.stack([np.cos(woy_norm), np.sin(woy_norm)], axis=-1)
     
         #To catch longer term trending data, can also include year number. [depending on size of train / prediction windows and random sampling boundaries could be same value over whole series]
-        year_nmumber = features_days.year
+        year_number = features_times.year
     
     
     if args.sampling_period=='weekly':
         #index of week number, when sampling at WEEKLY level (this is different than above)
-        fff = pd.date_range(data_start, features_end, freq='W')
+#        features_times = pd.date_range(data_start, features_end, freq='W')
         #!!!!!!!!!!!!! still need to worry about alignment ... 
         if WEEK_NUMBER_METHOD=='pandas':
-            week = fff.weekofyear.values
+            week = features_times.weekofyear.values
         elif WEEK_NUMBER_METHOD=='floor7':
-            week = np.floor((fff.dayofyear.values - 1.) /7.)
+            week = np.floor((features_times.dayofyear.values - 1.) /7.)
         year_period = WEEK_NUMBER_MAX / (2 * np.pi) #!!!! need to be carefuly non-uniform weeks [52 has 10 days ???]  ---> actually in pandas numbering goes to 53, depending on start day of week for that year
         woy_norm = week / year_period #not sure if by default this starts on Monday vs Sunday
         woy = np.stack([np.cos(woy_norm), np.sin(woy_norm)], axis=-1)
-        year_nmumber = features_days.year
+        year_number = features_times.year
     
     if args.sampling_period=='monthly':
         #month index (only used if sampling monthly)
-        fff = pd.date_range(data_start, features_end, freq='M') #!!!!! need to think about alignment of starting month on particular dates ....
+#        features_times = pd.date_range(data_start, features_end, freq='M') #!!!!! need to think about alignment of starting month on particular dates ....
         period = 12. / (2 * np.pi) #!!!! need to be carefuly non-uniform weeks [52 has 10 days ???]  ---> actually in pandas numbering goes to 53, depending on start day of week for that year
-        moy_norm = fff.month.values / period #not sure if by default this starts on Monday vs Sunday
+        moy_norm = features_times.month.values / period #not sure if by default this starts on Monday vs Sunday
         moy = np.stack([np.cos(moy_norm), np.sin(moy_norm)], axis=-1)    
-        year_nmumber = features_days.year
+        year_number = features_times.year
 
     
     
@@ -412,9 +415,9 @@ def run():
             count_median=count_median,
             year_autocorr=year_autocorr,
             quarter_autocorr=quarter_autocorr,
-            dow=dow,#N x 2 array since encoded week periodicity as complex number
+            #dow=dow,#N x 2 array since encoded week periodicity as complex number
             
-            woy=woy,#!!!!!!!!
+            #woy=woy,#!!!!!!!!
             count_pctl_100=percentiles[5],#max #!!!!!!!!!!!!!!!! just to see what happens: apend one of my features.
         )
     
@@ -422,7 +425,7 @@ def run():
         tensors = dict(
             counts=df,
             count_median=count_median,#this is just the median feature, can put in others too
-            dow=dow,
+            #dow=dow,
         )    
         
     elif (args.features_set == 'full') or (args.features_set == 'full_w_context'):
@@ -453,35 +456,40 @@ def run():
 
         )  
         
-        if args.sampling_period=='daily':
-            tensors['dow']=dow
-            tensors['woy']=woy #and want want week number too, aggregating last ~10 days into week 52
-        elif args.sampling_period=='weekly':
-            tensors['woy']=woy
-        elif args.sampling_period=='monthly':
-            tensors['moy']=moy
-        else:
-            raise Exception('Must specify correct sampling period')
-            
-            
-        #If provide other info based on e.g. new location (any features that are not derived purely from the time series)
-        if args.features_set == 'full_w_context':
-            tensors['country'] = asdasdasd
-            tensors['region'] = asdasdasd
-            tensors['city_population'] = asdasdasd
-            raise Exception('not implemented yet')
-            #... can write scraper function to get these ...
-        
-        
-        
     else:
         raise Exception(f'features_set must be specified\nOne of ["arturius","simple","full","full_w_context"]')
+
+
+
+        
+    if args.sampling_period=='daily':
+        tensors['dow']=dow
+        tensors['woy']=woy #and want want week number too, aggregating last ~10 days into week 52
+    elif args.sampling_period=='weekly':
+        tensors['woy']=woy
+    elif args.sampling_period=='monthly':
+        tensors['moy']=moy
+    else:
+        raise Exception('Must specify correct sampling period')
+            
+            
+    """#If provide other info based on e.g. new location (any features that are not derived purely from the time series)
+    if args.features_set == 'full_w_context':
+        tensors['country'] = asdasdasd
+        tensors['region'] = asdasdasd
+        tensors['city_population'] = asdasdasd
+        raise Exception('not implemented yet')
+        #... can write scraper function to get these ..."""
+        
+        
+        
+
     
     
     
     
     plain = dict(
-        features_days=len(features_days),
+        features_times=len(features_times),
         data_days=len(df.columns),
         N_time_series=len(df),
         data_start=data_start,

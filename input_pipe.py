@@ -111,15 +111,15 @@ class InputPipe:
         if self.sampling_period=='daily':
             cropped_dow = self.inp.dow[start:end]
             cropped_woy = self.inp.woy[start:end]
-            cropped_moy = 0*cropped_dow #Month information is alreayd contained in week information. COuld incude anyway to be explicit, but for now do not use as a feature
+#            cropped_moy = 0*cropped_dow #Month information is alreayd contained in week information. COuld incude anyway to be explicit, but for now do not use as a feature
         elif self.sampling_period=='weekly':
             cropped_woy = self.inp.woy[start:end]
-            cropped_dow = 0*cropped_woy
-            cropped_moy = 0*cropped_woy
+#            cropped_dow = 0*cropped_woy
+#            cropped_moy = 0*cropped_woy
         elif self.sampling_period=='monthly':
             cropped_moy = self.inp.moy[start:end]
-            cropped_dow = 0*cropped_moy
-            cropped_woy = 0*cropped_moy            
+#            cropped_dow = 0*cropped_moy
+#            cropped_woy = 0*cropped_moy            
             
 
         
@@ -244,13 +244,15 @@ class InputPipe:
         #For now just use the same ...
 #        count_pctl_0, count_pctl_5, count_pctl_25, count_pctl_75, count_pctl_95, count_pctl_100, count_variance)
         elif self.features_set == 'full':
-            f = ooooooooo
             if self.sampling_period == 'daily':
-                x_counts, y_counts, lagged_counts, dow, woy, pf_agent, pf_country, pf_site, page_ix, count_median, year_autocorr, quarter_autocorr, count_pctl_100 = args
+                x_counts, y_counts, lagged_counts, dow, woy, page_ix, count_median, year_autocorr, quarter_autocorr,\
+                count_pctl_0, count_pctl_5, count_pctl_25, count_pctl_75, count_pctl_95, count_pctl_100, count_variance = args
             elif self.sampling_period == 'weekly':
-                x_counts, y_counts, lagged_counts, woy, pf_agent, pf_country, pf_site, page_ix, count_median, year_autocorr, quarter_autocorr, count_pctl_100 = args        
+                x_counts, y_counts, lagged_counts, woy, page_ix, count_median, year_autocorr, quarter_autocorr,\
+                count_pctl_0, count_pctl_5, count_pctl_25, count_pctl_75, count_pctl_95, count_pctl_100, count_variance = args
             elif self.sampling_period == 'monthly':
-                x_counts, y_counts, lagged_counts, moy, pf_agent, pf_country, pf_site, page_ix, count_median, year_autocorr, quarter_autocorr, count_pctl_100 = args 
+                x_counts, y_counts, lagged_counts, moy, page_ix, count_median, year_autocorr, quarter_autocorr,\
+                count_pctl_0, count_pctl_5, count_pctl_25, count_pctl_75, count_pctl_95, count_pctl_100, count_variance = args
         
         # =============================================================================
         # Do train - predict splits
@@ -282,10 +284,19 @@ class InputPipe:
 #                                                count_pctl_75,
 #                                                count_pctl_95,
 #                                                count_pctl_100,
-#                                                count_variance])         
-        scalar_features = tf.stack([count_median, quarter_autocorr, year_autocorr, count_pctl_100])#!!!!!!! if kaggle feats. Else need also the oher quntiles too
-        flat_features = tf.concat([pf_agent, pf_country, pf_site, scalar_features], axis=0) 
-        series_features = tf.expand_dims(flat_features, 0)
+#                                                count_variance])
+        if self.features_set == 'arturius':
+            scalar_features = tf.stack([count_median, quarter_autocorr, year_autocorr, count_pctl_100])
+            flat_features = tf.concat([pf_agent, pf_country, pf_site, scalar_features], axis=0) 
+            series_features = tf.expand_dims(flat_features, 0)
+        elif self.features_set == 'full':
+            scalar_features = tf.stack([count_median, quarter_autocorr, year_autocorr, count_pctl_0, count_pctl_5, count_pctl_25, count_pctl_75, count_pctl_95, count_pctl_100, count_variance])
+            #flat_features = tf.concat([pf_agent, pf_country, pf_site, scalar_features], axis=0) 
+            flat_features = tf.concat([scalar_features], axis=0) 
+            series_features = tf.expand_dims(flat_features, 0)
+        
+        
+        
         
 #            print(scalar_features) #4
 #            print(flat_features) #18
@@ -328,6 +339,9 @@ class InputPipe:
         
         #!!!!! why no lagged_y alnoe, only in y_features??? 
         #!!!! why no norm_y_counts ?????
+        
+        print('x_features')
+        print(x_features)
         return x_counts, x_features, norm_x_counts, x_lagged, y_counts, y_features, norm_y_counts, mean, std, flat_features, page_ix
         #Must match up with setting self.XYZ = it_tensors below in __init__. 
 
@@ -407,6 +421,8 @@ class InputPipe:
                  .batch(batch_size)
                  .prefetch(runs_in_burst * 2)
                  )
+        print('---------------- Done batching ----------------')
+        print(batch)
         self.iterator = batch.make_initializable_iterator()
         it_tensors = self.iterator.get_next()
 
@@ -452,10 +468,7 @@ def page_features(inp: VarFeeder, features_set):
         raise Exception('not ready yet')
         
     elif features_set=='full':
-#        print(inp.counts)
-        dummy = tf.zeros_like(inp.counts)
-#        print(dummy)
-        d = (inp.counts, dummy, dummy, dummy,
+        d = (inp.counts,
             inp.page_ix,
             inp.count_median,
             inp.year_autocorr, inp.quarter_autocorr,
@@ -465,7 +478,7 @@ def page_features(inp: VarFeeder, features_set):
             inp.count_pctl_75,
             inp.count_pctl_95,
             inp.count_pctl_100,
-            inp.count_variance)    
+            inp.count_variance)          
         
     elif features_set=='full_w_context':
         raise Exception('not ready yet')
