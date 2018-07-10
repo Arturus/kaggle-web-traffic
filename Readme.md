@@ -62,7 +62,7 @@ ll data/
 
 #no reason to expect 10000 to 11500 is good range to save out. View loss along the way
 python3 trainer.py arturius daily --name s32 --hparam_set=s32 --n_models=3 --asgd_decay=0.99 --max_steps=11500 --save_from_step=10000
-python3 trainer.py full daily --name s32 --hparam_set=s32 --n_models=3 --asgd_decay=0.99 --max_steps=11500 --save_from_step=10000
+python3 trainer.py full daily --name s32 --hparam_set=s32 --n_models=3 --asgd_decay=0.99 --max_steps=11500 --save_from_step=10000 --patience=10 --predict_window=50
 --name TEST_attn_head --hparam_set=TEST_attn_head
 --name TEST_stacked --hparam_set=TEST_stacked
 

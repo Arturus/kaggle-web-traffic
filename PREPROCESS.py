@@ -390,6 +390,8 @@ def format_like_Kaggle(df, myDataDir, imputation_method, sampling_period, start_
             #for now assume we do ipmutation THEN aggregation:
             #df = aggregate(df,sampling_period)
 
+        df*= 0.
+        df += 237.
         print(df)
 
         #SHould end up with a csv that is rows are series (each id), cols are dates
@@ -443,7 +445,7 @@ if __name__ == '__main__':
     START_DATE = '2015-01-01' #None
     END_DATE = '2017-12-31' #None
     REMOVE_ID_LIST = []#[3,4]#id's for locations that are no longer useful
-    SAMPLING_PERIOD = 'weekly' #'daily', 'weekly', 'monthly'
+    SAMPLING_PERIOD = 'daily' #'daily', 'weekly', 'monthly'
 
 
     # =============================================================================

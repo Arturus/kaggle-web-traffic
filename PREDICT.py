@@ -28,6 +28,7 @@ import hparams
 FEATURES_SET = 'arturius'# 'arturius' 'simple' 'full'
 SAMPLING_PERIOD = 'daily'
 DATA_TYPE = 'ours' #'kaggle' #'ours'
+Nmodels = 3.
 
 
 # =============================================================================
@@ -67,16 +68,16 @@ paths = [p for p in tf.train.get_checkpoint_state('data/cpt/s32').all_model_chec
 #preds = predict(paths, default_hparams(), back_offset=0,
 #                    n_models=3, target_model=0, seed=2, batch_size=2048, asgd=True)
 t_preds = []
-for tm in range(3):
+for tm in range(3):  #!!!!!!!! Nmodels
     tf.reset_default_graph()
     t_preds.append(predict(FEATURES_SET, SAMPLING_PERIOD, paths, build_hparams(hparams.params_s32), back_offset=0, predict_window=63,
                     n_models=3, target_model=tm, seed=2, batch_size=2048, asgd=True))
 
 
 # =============================================================================
-# average the 3 models predictions
+# average the N models predictions
 # =============================================================================
-preds = sum(t_preds)/3.
+preds = sum(t_preds)/Nmodels
 
 
 # =============================================================================

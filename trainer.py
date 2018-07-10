@@ -434,6 +434,9 @@ def train(features_set, sampling_period, name, hparams, multi_gpu=False, n_model
 
     all_models: List[ModelTrainerV2] = []
 
+    print('eval_pct', eval_pct)
+    print('eval_k', eval_k)
+    print('eval_batch_size', eval_batch_size)
     print('real_train_pages', real_train_pages)
     print('real_eval_pages', real_eval_pages)
     print('batch_size', batch_size)
@@ -646,7 +649,7 @@ def train(features_set, sampling_period, name, hparams, multi_gpu=False, n_model
                 has_best_indicator = '↑'
             else:
                 has_best_indicator = ' '
-            status = "%2d: Best top  %.3f%s (%s)" % (
+            status = "%2d: Best top SMAPE=%.3f%s (%s)" % (
                 epoch + 1, current_top, has_best_indicator,
                 ",".join(["%.3f" % m.top for m in eval_smape.metrics]))
 
