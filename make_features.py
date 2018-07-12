@@ -113,7 +113,7 @@ def single_autocorr(series, lag):
 def batch_autocorr(data, lag, starts, ends, threshold, backoffset=0):
     """
     Calculate autocorrelation for batch (many time series at once)
-    :param data: Time series, shape [N_time_series, n_days]
+    :param data: Time series, shape [N_time_series, n_timesteps]
     :param lag: Autocorrelation lag
     :param starts: Start index for each series
     :param ends: End index for each series
@@ -123,8 +123,8 @@ def batch_autocorr(data, lag, starts, ends, threshold, backoffset=0):
     autocorrelation value is NaN
     """
     n_series = data.shape[0]
-    n_days = data.shape[1]
-    max_end = n_days - backoffset
+    n_timesteps = data.shape[1]
+    max_end = n_timesteps - backoffset
     corr = np.empty(n_series, dtype=np.float64)
     support = np.empty(n_series, dtype=np.float64)
     for i in range(n_series):
@@ -149,21 +149,21 @@ def find_start_end(data: np.ndarray):
     """
     Calculates start and end of real traffic data. Start is an index of first non-zero, non-NaN value,
      end is index of last non-zero, non-NaN value
-    :param data: Time series, shape [N_time_series, n_days]
+    :param data: Time series, shape [N_time_series, n_timesteps]
     :return:
     """
     N_time_series = data.shape[0]
-    n_days = data.shape[1]
+    n_timesteps = data.shape[1]
     start_idx = np.full(N_time_series, -1, dtype=np.int32)
     end_idx = np.full(N_time_series, -1, dtype=np.int32)
     for page in range(N_time_series):
         # scan from start to the end
-        for day in range(n_days):
+        for day in range(n_timesteps):
             if not np.isnan(data[page, day]) and data[page, day] > 0:
                 start_idx[page] = day
                 break
         # reverse scan, from end to start
-        for day in range(n_days - 1, -1, -1):
+        for day in range(n_timesteps - 1, -1, -1):
             if not np.isnan(data[page, day]) and data[page, day] > 0:
                 end_idx[page] = day
                 break
@@ -284,7 +284,6 @@ def run():
 
     # Get the data
     df, nans, starts, ends = prepare_data(args.start, args.end, args.valid_threshold, args.data_type, args.sampling_period)
-    
 
     # =============================================================================
     # STATIC FEATURES
@@ -294,7 +293,7 @@ def run():
     data_start, data_end = df.columns[0], df.columns[-1]
 
     # We have to project some date-dependent features (day of week, etc) to the future dates for prediction
-    features_end = data_end + pd.Timedelta(args.add_days, unit='D')
+    features_end = data_end + pd.Timedelta(args.add_days, unit='D') #!!!!!!!!!!! will need to change for WEEKLY MONTHLY sampled
     print(f"start: {data_start}, end:{data_end}, features_end:{features_end}")
 
     # Group unique pages by agents

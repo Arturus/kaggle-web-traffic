@@ -352,6 +352,11 @@ def format_like_Kaggle(df, myDataDir, imputation_method, sampling_period, start_
             dd = pd.DataFrame(dates).T 
             dd['Page'] = u
             
+            #Make a good eay cae to overfit
+            dd*= 0.
+            dd += u
+            
+            
             #If doing imputation / other
             #for each series individually
             #...
@@ -390,8 +395,7 @@ def format_like_Kaggle(df, myDataDir, imputation_method, sampling_period, start_
             #for now assume we do ipmutation THEN aggregation:
             #df = aggregate(df,sampling_period)
 
-        df*= 0.
-        df += 237.
+
         print(df)
 
         #SHould end up with a csv that is rows are series (each id), cols are dates

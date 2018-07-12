@@ -22,6 +22,12 @@ class Split:
 
 
 class Splitter:
+    """
+    This is the splitter used when side_split
+    (vs. FakeSplitter when not side_split [when forward_split])
+    
+    Is typical train-test split
+    """
     def cluster_pages(self, cluster_idx: tf.Tensor):
         """
         Shuffles pages so all user_agents of each unique pages stays together in a shuffled list
@@ -62,14 +68,42 @@ class Splitter:
             train_sampled_size = int(round(train_size * train_sampling))
             test_idx = splits[i][:test_sampled_size]
             train_idx = complements[i][:train_sampled_size]
+            
+#            print(test_size)
+#            print(train_size)
+#            print(test_sampled_size)
+#            print(train_sampled_size)   
+#            print(test_idx)
+#            print(train_idx)
+            #When doing --side_split validation option, was getting a type error
+            #when creating test_set, tran_set list comprehensions: change dtype here for idx
+            test_idx = tf.cast(test_idx, tf.int32)
+            train_idx = tf.cast(train_idx, tf.int32)
+            
+            test_idx = tf.Print(test_idx, ['test_idx',tf.shape(test_idx),test_idx])
+            train_idx = tf.Print(train_idx, ['train_idx',tf.shape(train_idx),train_idx])
+            """48354
+            96709
+            48354
+            96709
+            Tensor("strided_slice_1:0", shape=(48354,), dtype=float32, device=/device:CPU:0)
+            Tensor("strided_slice_2:0", shape=(96709,), dtype=float32, device=/device:CPU:0)"""     
             test_set = [tf.gather(tensor, test_idx, name=mk_name('test', tensor)) for tensor in tensors]
             tran_set = [tf.gather(tensor, train_idx, name=mk_name('train', tensor)) for tensor in tensors]
+#            print(test_set)
+#            print(tran_set)
             return Split(test_set, tran_set, test_sampled_size, train_sampled_size)
 
         self.splits = [prepare_split(i) for i in range(n_splits)]
 
 
 class FakeSplitter:
+    """
+    This is the splitter used when forward_split
+    (vs. Splitter when not forward_split [when side_split])
+    
+    Is typical train-test split
+    """    
     def __init__(self, tensors: List[tf.Tensor], n_splits, seed, test_sampling=1.0):
         total_series = tensors[0].shape[0].value
         N_time_series = int(round(total_series * test_sampling))
@@ -80,7 +114,7 @@ class FakeSplitter:
         def prepare_split(i):
             idx = tf.random_shuffle(tf.range(0, N_time_series, dtype=tf.int32), seed + i)
             train_tensors = [tf.gather(tensor, idx, name=mk_name('shfl', tensor)) for tensor in tensors]
-            if test_sampling < 1.0:
+            if test_sampling < 1.0: #Only use subset of time series = test_sampling
                 sampled_idx = idx[:N_time_series]
                 test_tensors = [tf.gather(tensor, sampled_idx, name=mk_name('shfl_test', tensor)) for tensor in tensors]
             else:
@@ -97,7 +131,7 @@ class InputPipe:
         :param counts: counts timeseries
         :param start: start index
         :param end: end index
-        :return: tuple (train_counts, test_counts, dow, lagged_counts)
+        :return: tuple (train_counts, test_counts, lagged_counts, [dow,woy,moy])
         """
         # Pad counts to ensure we have enough array length for prediction
         counts = tf.concat([counts, tf.fill([self.predict_window], np.NaN)], axis=0)
@@ -178,22 +212,24 @@ class InputPipe:
         :param args: pass-through data, will be appended to result
         :return: result of cut() + args
         """
-        n_days = self.predict_window + self.train_window
+        n_timesteps = self.predict_window + self.train_window
         # How much free space we have to choose starting day
-        free_space = self.inp.data_days - n_days - self.back_offset - self.start_offset
+        free_space = self.inp.data_days - n_timesteps - self.back_offset - self.start_offset
         if self.verbose:
+            #!!!!!! doesn't really matter since this is just printout, but would need to change for WEEKLY / MONTHLY
             lower_train_start = self.inp.data_start + pd.Timedelta(self.start_offset, 'D')
-            lower_test_end = lower_train_start + pd.Timedelta(n_days, 'D')
+            lower_test_end = lower_train_start + pd.Timedelta(n_timesteps, 'D')
             lower_test_start = lower_test_end - pd.Timedelta(self.predict_window, 'D')
             upper_train_start = self.inp.data_start + pd.Timedelta(free_space - 1, 'D')
-            upper_test_end = upper_train_start + pd.Timedelta(n_days, 'D')
+            upper_test_end = upper_train_start + pd.Timedelta(n_timesteps, 'D')
             upper_test_start = upper_test_end - pd.Timedelta(self.predict_window, 'D')
             print(f"Free space for training: {free_space} days.")
             print(f" Lower train {lower_train_start}, prediction {lower_test_start}..{lower_test_end}")
             print(f" Upper train {upper_train_start}, prediction {upper_test_start}..{upper_test_end}")
         # Random starting point
         offset = tf.random_uniform((), self.start_offset, free_space, dtype=tf.int32, seed=self.rand_seed)
-        end = offset + n_days
+#        offset = tf.Print(offset,['offset',tf.shape(offset),offset])
+        end = offset + n_timesteps
         # Cut all the things
         return self.cut(counts, offset, end) + args
 
@@ -211,6 +247,7 @@ class InputPipe:
     def reject_filter(self, x_counts, y_counts, *args):
         """
         Rejects timeseries having too many zero datapoints (more than self.max_train_empty)
+        [by this point, NANs would have already been converted to 0's, this is is NAN's U 0's]
         """
         if self.verbose:
             print("max empty %d train %d predict" % (self.max_train_empty, self.max_predict_empty))
@@ -270,7 +307,7 @@ class InputPipe:
         std = tf.sqrt(tf.reduce_mean(tf.squared_difference(x_counts, mean)))
         norm_x_counts = (x_counts - mean) / std
         norm_y_counts = (y_counts - mean) / std
-        norm_lagged_counts = (lagged_counts - mean) / std   #!!!!!! seems like there is some leakage in time here??? The y lagged are normalized in a way that is a function of the y data ??
+        norm_lagged_counts = (lagged_counts - mean) / std
 
         # Split lagged counts to train and test
         x_lagged, y_lagged = tf.split(norm_lagged_counts, [self.train_window, self.predict_window], axis=0)
@@ -308,7 +345,7 @@ class InputPipe:
         #the time INdependent features [constant per fixture] will just be tiled same way either way except diff lengths
 
         # Train features, depending on measurement frequency
-        x_features = tf.expand_dims(norm_x_counts, -1) # [n_days] -> [n_days, 1]
+        x_features = tf.expand_dims(norm_x_counts, -1) # [n_timesteps] -> [n_timesteps, 1]
         if self.sampling_period == 'daily':
             x_features = tf.concat([x_features, x_dow, x_woy], axis=1)
         elif self.sampling_period == 'weekly':
@@ -318,7 +355,7 @@ class InputPipe:
         #Regardess of period/frequency will have below features:
         x_features = tf.concat([x_features, x_lagged,
                                 # Stretch series_features to all training days
-                                # [1, features] -> [n_days, features]
+                                # [1, features] -> [n_timesteps, features]
                                 tf.tile(series_features, [self.train_window, 1])], axis=1)
 
         # Test features
@@ -331,7 +368,7 @@ class InputPipe:
         #Regardess of period/frequency will have below features:
         y_features = tf.concat([y_features, y_lagged,
                                 # Stretch series_features to all testing days
-                                # [1, features] -> [n_days, features]
+                                # [1, features] -> [n_timesteps, features]
                                 tf.tile(series_features, [self.predict_window, 1])
                                 ], axis=1)
 
@@ -407,6 +444,14 @@ class InputPipe:
         self.mode = mode
         self.verbose = verbose
 
+
+        print('max_train_empty',self.max_train_empty)
+        print('max_predict_empty',self.max_predict_empty)
+        print('train_window',self.train_window)
+        print('predict_window',self.predict_window)
+        print('attn_window',self.attn_window)
+
+        
         # Reserve more processing threads for eval/predict because of larger batches
         num_threads = 3 if mode == ModelMode.TRAIN else 6
 

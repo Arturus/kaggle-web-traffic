@@ -15,6 +15,17 @@ RNN = cudnn_rnn.CudnnGRU
 # RNN = tf.contrib.cudnn_rnn.CudnnRNNRelu
 
 
+
+def debug_tensor_print(tensor):
+    """
+    Debugging mode:
+        Print info about a tensor in realtime
+    """
+    tensor_list = [tensor.name, tf.shape(tensor), tensor]
+    tensor = tf.Print(tensor, tensor_list)
+    return tensor
+
+
 def default_init(seed):
     # replica of tf.glorot_uniform_initializer(seed=seed)
     return layers.variance_scaling_initializer(factor=1.0,
@@ -237,7 +248,10 @@ def decode_predictions(decoder_readout, inp: InputPipe):
     batch_readout = tf.transpose(decoder_readout)
     batch_std = tf.expand_dims(inp.norm_std, -1)
     batch_mean = tf.expand_dims(inp.norm_mean, -1)
-    return batch_readout * batch_std + batch_mean
+    
+    ret = batch_readout * batch_std + batch_mean
+#    ret = tf.Print(ret, ['ret:',tf.shape(ret),ret, 'batch_readout:',batch_readout, 'batch_std:',batch_std, 'batch_mean',batch_mean])
+    return ret
 
 
 def calc_loss(predictions, true_y, additional_mask=None):
@@ -263,7 +277,11 @@ def calc_loss(predictions, true_y, additional_mask=None):
 
 
 def make_train_op(loss, ema_decay=None, prefix=None):
-    optimizer = COCOB()
+    #optimizer = COCOB()
+    ##train.AdamOptimizer train.GradientDescentOptimizer
+    optimizer = tf.train.AdamOptimizer() #!!!!!try simpler optimizer on our data.
+#    optimizer = tf.train.GradientDescentOptimizer(1e-9) #!!!!!try simpler optimizer on our data.
+    
     glob_step = tf.train.get_global_step()
 
     # Add regularization losses
@@ -391,6 +409,9 @@ class Model:
                                                       fingerprint, seed=seed)
 
         # Run decoder
+        #... = decoder(encoder_state, attn_features, prediction_inputs, previous_y)
+        print('inp.norm_x[:, -1]',inp.norm_x[:, -1])
+        print('inp.time_y',inp.time_y)
         decoder_targets, decoder_outputs = self.decoder(encoder_state,
                                                         attn_features if hparams.use_attn else None,
                                                         inp.time_y, inp.norm_x[:, -1])
@@ -399,7 +420,13 @@ class Model:
         dec_activation_loss = rnn_activation_loss(decoder_outputs, hparams.decoder_activation_loss / inp.predict_window)
 
         # Get final denormalized predictions
-        self.predictions = decode_predictions(decoder_targets, inp)
+        vv = decode_predictions(decoder_targets, inp)
+        vv = tf.Print(vv, ['decode_predictions',vv,tf.shape(vv)])
+        self.predictions = vv
+#        print('self.predictions (still log1p(counts))')
+#        print(self.predictions)
+        
+
 
         # Calculate losses and build training op
         if inp.mode == ModelMode.PREDICT:
@@ -416,9 +443,12 @@ class Model:
         else:
             self.mae, smape_loss, self.smape, self.loss_item_count = calc_loss(self.predictions, inp.true_y,
                                                                                additional_mask=loss_mask)
+            #from calc_loss:
+            #mae_loss, smape_loss(true_y, predictions, weights), calc_smape_rounded(true_y, predictions, weights), tf.size(true_y)
+            
             if is_train:
                 # Sum all losses
-                total_loss = smape_loss + enc_stab_loss + dec_stab_loss + enc_activation_loss + dec_activation_loss
+                total_loss = smape_loss + enc_stab_loss + dec_stab_loss + enc_activation_loss + dec_activation_loss  #!!!!!!!! put in pinball loss instead of SMAPE when doing quantiles
                 self.train_op, self.glob_norm, self.ema = make_train_op(total_loss, asgd_decay, prefix=graph_prefix)
 
 
@@ -458,6 +488,20 @@ class Model:
         else:
             cell = build_cell(0)
 
+
+        #!!!!!! on our data, when doing side_split, encoder_state is fine [no NANs],
+        #but when doing walk_forward, some rows (instances) are all NANs (and the others all defined),
+        #then eventually every instance becomes NANs
+        N_nans = tf.reduce_sum(tf.cast(tf.is_nan(encoder_state), tf.float32))
+        tt = tf.cast(tf.is_nan(encoder_state), tf.float32)
+        ff = tf.reduce_sum(tt,axis=1)
+        ggg = tf.cast(tf.equal(ff, ff*0.+267.), tf.float32)
+        N_all_NAN_encoder_states = tf.reduce_sum(ggg)
+        total = tf.reduce_prod(tf.shape(encoder_state))
+        encoder_state = tf.Print(encoder_state,['encoder_state', tf.shape(encoder_state), encoder_state, 'N_nans', N_nans, 'total', total, 'N_all_NAN_encoder_states', N_all_NAN_encoder_states])
+        
+
+
         nest.assert_same_structure(encoder_state, cell.state_size)
         predict_days = self.inp.predict_window
         assert prediction_inputs.shape[1] == predict_days
@@ -470,11 +514,13 @@ class Model:
 
         # Stop condition for decoding loop
         def cond_fn(time, prev_output, prev_state, array_targets: tf.TensorArray, array_outputs: tf.TensorArray):
+            #!!!!! ???? Need to change when doing as weekly data???
             return time < predict_days
 
         # FC projecting layer to get single predicted value from RNN output
         def project_output(tensor):
-            return tf.layers.dense(tensor, 1, name='decoder_output_proj', kernel_initializer=self.default_init())
+            N_pctls=1 #!!!!!!!!!! quantiles
+            return tf.layers.dense(tensor, N_pctls, name='decoder_output_proj', kernel_initializer=self.default_init())
 
         def loop_fn(time, prev_output, prev_state, array_targets: tf.TensorArray, array_outputs: tf.TensorArray):
             """
@@ -496,13 +542,15 @@ class Model:
                 # Append previous predicted value + attention vector to input features
                 next_input = tf.concat([prev_output, features, attn], axis=1)
             else:
-                # Append previous predicted value to input features
                 next_input = tf.concat([prev_output, features], axis=1)
+                # Append previous predicted value to input features
 
             # Run RNN cell
             output, state = cell(next_input, prev_state)
             # Make prediction from RNN outputs
-            projected_output = project_output(output)
+            projected_output = project_output(output) #!!!!!!!!!! quantiles
+            projected_output = tf.Print(projected_output, ['time',time,'projected_output',projected_output,tf.shape(projected_output),'output',output,tf.shape(output),'state',state,tf.shape(state) ,'prev_output',prev_output,tf.shape(prev_output) ,'features',features,tf.shape(features),features[1,:18]])
+            
             # Append step results to the buffer arrays
             if return_raw_outputs:
                 array_outputs = array_outputs.write(time, output)
@@ -515,13 +563,37 @@ class Model:
                      tf.expand_dims(previous_y, -1),
                      encoder_state,
                      tf.TensorArray(dtype=tf.float32, size=predict_days),
-                     tf.TensorArray(dtype=tf.float32, size=predict_days) if return_raw_outputs else tf.constant(0)]
+                     tf.TensorArray(dtype=tf.float32, size=predict_days) if return_raw_outputs else tf.constant(0)] #!!!!!!! size= ... x N_pctls
         # Run the loop
-        _, _, _, targets_ta, outputs_ta = tf.while_loop(cond_fn, loop_fn, loop_init)
+        _time, _projected_output, _state, targets_ta, outputs_ta = tf.while_loop(cond_fn, loop_fn, loop_init)
+        
+        
+        print('decoder')
+#        print('_time',_time)
+#        _time = debug_tensor_print(_time)
+#        print('_projected_output',_projected_output)
+#        _projected_output = debug_tensor_print(_projected_output)     
+#        print('_state',_state)        
+#        _state = debug_tensor_print(_state)  
 
+        
+#        targets_ta_tensor = tf.convert_to_tensor(targets_ta)
+#        targets_ta_tensor = tf.Print(targets_ta_tensor,[targets_ta_tensor])
+#        print('targets_ta',targets_ta)
+#        print('outputs_ta',outputs_ta)
         # Get final tensors from buffer arrays
         targets = targets_ta.stack()
         # [time, batch_size, 1] -> [time, batch_size]
         targets = tf.squeeze(targets, axis=-1)
         raw_outputs = outputs_ta.stack() if return_raw_outputs else None
+
+#        print('targets',targets)
+        #!!!!!!!!!!! why targets becomes NANs ?????
+#        why targets NANs?
+        targets = debug_tensor_print(targets)  #63 x 245,   except for first 2 prints for each new iteration it is 63 x 64
+#        raw_outputs = debug_tensor_print(raw_outputs) #is 63 x 64 x 267
+        
+#        print_list = ['_time', _time.name, tf.shape(_time), _time]
+#        raw_outputs = tf.Print(raw_outputs, print_list)
+        
         return targets, raw_outputs

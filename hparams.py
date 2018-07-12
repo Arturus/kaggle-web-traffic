@@ -3,12 +3,12 @@ import re
 
 # Manually selected params
 params_s32 = dict(
-    batch_size=64,#256,
+    batch_size=123,#256,
     #train_window=380,
-    #train_window=283,
-    train_window=30,#try 65 w our data to see if allows more samples through filter
+    train_window=283,
+    #train_window=30,#try 65 w our data to see if allows more samples through filter
     train_skip_first=0,
-    rnn_depth=27,#267,
+    rnn_depth=267,
     use_attn=False,
     attention_depth=64,
     attention_heads=1,
@@ -49,14 +49,13 @@ params_s32 = dict(
 # Test setting with multiple attention heads
 #python3 trainer.py --name TEST_attn_head --hparam_set=TEST_attn_head --n_models=3 --no_eval --no_forward_split --asgd_decay=0.99 --max_steps=11500 --save_from_step=200
 params_TEST_attn_head = dict(
-    batch_size=256,
-    #train_window=380,
+    batch_size=64,#256,
     train_window=283,
     train_skip_first=0,
-    rnn_depth=267,
+    rnn_depth=27,#267,
     use_attn=True,#!!!!!!!!!!!!!!!! Set True
     attention_depth=64,
-    attention_heads=2,#!!!!!!!!!!!!!!!! Set True
+    attention_heads=1,#!!!!!!
     encoder_readout_dropout=0.4768781146510798,
 
     encoder_rnn_layers=1,

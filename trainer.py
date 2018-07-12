@@ -459,7 +459,7 @@ def train(features_set, sampling_period, name, hparams, multi_gpu=False, n_model
                                  rand_seed=seed, train_skip_first=hparams.train_skip_first,
                                  back_offset=predict_window if forward_split else 0)
                 inp_scope.reuse_variables()
-                TCT = .3 #0.01
+                TCT = 0.01
                 if side_split:
                     side_eval_pipe = InputPipe(features_set, sampling_period, inp, features=split.test_set, N_time_series=split.test_size,
                                                mode=ModelMode.EVAL, batch_size=eval_batch_size, n_epoch=None,
@@ -740,7 +740,7 @@ def predict(features_set, sampling_period, checkpoints, hparams, return_x=False,
             else:
                 predictions += cp_predictions
     predictions /= len(checkpoints)
-    offset = pd.Timedelta(back_offset, 'D')
+    offset = pd.Timedelta(back_offset, 'D') #!!!!!!!!!!!! need to change these lines when sampling WEEKLY MONTHLY
     start_prediction = inp.data_end + pd.Timedelta('1D') - offset
     end_prediction = start_prediction + pd.Timedelta(predict_window - 1, 'D')
     predictions.columns = pd.date_range(start_prediction, end_prediction)
