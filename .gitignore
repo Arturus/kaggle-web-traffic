@@ -14,5 +14,7 @@ data/submission.csv.gz
 data/*
 */.DS_STORE
 .DS_STORE
-images/*
-ex_figs/*
+images/
+ex_figs/
+
+*.png

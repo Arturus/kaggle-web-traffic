@@ -85,7 +85,7 @@ def get_earliest_latest_dates(df):
 
 
 
-def __missing_vals_distribution(df):
+def __missing_vals_distribution(df,out_of_range_fill_value):
     """
     Look at two things:
         - What fraction of our time series are desne vs. have >= 1 missing value?
@@ -96,7 +96,7 @@ def __missing_vals_distribution(df):
          start/end missing, nd intermedite gaps have been filled with -1
     """
 
-    def make_cdf(v):
+    def make_cdf(v,out_of_range_fill_value):
         c = Counter(v)
         x = list(c.keys())
         x = np.array(x) -1 #-1 to go from diff in days from present data -> gap length
@@ -113,7 +113,7 @@ def __missing_vals_distribution(df):
 
     #get fraction dense vs sparse:
     dd = df.values[:,1:]
-    sparse = (dd==-1).sum(axis=1)
+    sparse = (dd==out_of_range_fill_value).sum(axis=1)
     Nsparse = float((sparse>0).sum())
     print(Nsparse)
     Ntotal = float(dd.shape[0])
@@ -127,12 +127,12 @@ def __missing_vals_distribution(df):
     #not officially starting yet, or it got closed out.
     all_gaps = []
     for row in dd:
-        inds = np.where(row!=-1)[0]
+        inds = np.where(row!=out_of_range_fill_value)[0]
         x = np.diff(inds)
         t = list(x[x>1])
         if len(t)>0:
             all_gaps.extend(t)
-    make_cdf(all_gaps)
+    make_cdf(all_gaps,out_of_range_fill_value)
 
 
 
@@ -243,7 +243,7 @@ def do_imputation(df,imputation_method):
 
 
 
-def imputation_lagKmedian_single_series(df,seasonality,N_seasons):
+def imputation_lagKmedian_single_series(df,seasonality,N_seasons,out_of_range_fill_value):
     """
     Fill in short missing gaps by replacing missing value with:
         median over last K weeks for that day.
@@ -253,8 +253,8 @@ def imputation_lagKmedian_single_series(df,seasonality,N_seasons):
     
     For now assuming that big chunk removal is done AFTER this step.
     """
-    #If the whole series is empty (all -1):    
-    if np.alltrue(df.drop(columns='Page').values==-1):
+    #If the whole series is empty (all -1/NAN):    
+    if np.alltrue(df.drop(columns='Page').values==out_of_range_fill_value):
         return df
 
     max_block_length = seasonality - 1
@@ -295,8 +295,6 @@ def imputation_lagKmedian_single_series(df,seasonality,N_seasons):
                 if np.alltrue([i in missing_inds for i in block_inds]):
                     in_block = True
                     break
-#                x = _.values[0][mi+off : mi+off+seasonality]
-#                if np.alltrue(x==-1):
             if in_block:
                 continue 
             #If it is not in a completely missing block [at least 1 value is recorded], then do lag K median:
@@ -306,7 +304,7 @@ def imputation_lagKmedian_single_series(df,seasonality,N_seasons):
             imputed_val = np.median(t)
             #If all K previous timesteps were -1, then would give nan, so set manually to -1:
             if np.isnan(imputed_val):# == np.nan:
-                imputed_val = -1
+                imputed_val = out_of_range_fill_value
             _[_.columns[mi]] = imputed_val
             
 #        g = np.where(_<0.)[1]
@@ -399,6 +397,17 @@ def format_like_Kaggle(df, myDataDir, imputation_method, sampling_period, start_
             df.drop(columns=bad_cols,inplace=True)
             return df
             
+        def make_index_col_left(df):
+            """
+            Make sure order as expected by putting page col left
+            """
+            id_col_name = 'Page'
+            cols = df.columns.tolist()
+            cols.remove(id_col_name)
+            
+            df = df[ [id_col_name] + cols]
+            return df
+        
         
         #Rename columns to be as in Kaggle data:
         df.rename(columns={'id':'Page'},inplace=True)
@@ -413,7 +422,7 @@ def format_like_Kaggle(df, myDataDir, imputation_method, sampling_period, start_
             latest = min(latest,end_date)
         
         idx = pd.date_range(earliest,latest) #!!!!!! fro now doing daily. When doing weekly also keep with default freq='D' . If change to 'W' alignment gets messed up. Just do daily 'D', then later can correct easily.
-        OUT_OF_RANGE_FILL_VALUE = -1. #np.NaN #0 #puttign as nan casts to float and cannot convert to int
+        OUT_OF_RANGE_FILL_VALUE = np.NaN #0 #-1 #puttign as nan casts to float and cannot convert to int
 
 
         #Do aggregation from DAILY --> WEEKLY before doing any kind of imputation
@@ -421,6 +430,12 @@ def format_like_Kaggle(df, myDataDir, imputation_method, sampling_period, start_
             AGGREGATION_TYPE = 'median'
             df = aggregate_to_weekly(df, AGGREGATION_TYPE)    
 
+    
+        #Some id's [15,16] have their missing values recorded as "-1"
+        #vs. later id's have their missing values simply missing from the original csv
+        #So for those id's that actually have -1, convert to NAN first:
+        df.replace(-1.,np.nan,inplace=True)
+    
     
         #Reorganize data for each id (->"Page")
         unique_ids = pd.unique(df['Page'])
@@ -443,7 +458,7 @@ def format_like_Kaggle(df, myDataDir, imputation_method, sampling_period, start_
                 elif sampling_period=='weekly':
                     N_seasons = 4
                     seasonality = 1
-                dd = imputation_lagKmedian_single_series(dd,seasonality,N_seasons)
+                dd = imputation_lagKmedian_single_series(dd,seasonality,N_seasons,OUT_OF_RANGE_FILL_VALUE)
 
 #            if i == 58:
 #                v=eeeeee
@@ -482,7 +497,7 @@ def format_like_Kaggle(df, myDataDir, imputation_method, sampling_period, start_
         # =============================================================================
         #VERBOSE = False
         #if VERBOSE:
-        #    __missing_vals_distribution(df)     
+        #    __missing_vals_distribution(df,OUT_OF_RANGE_FILL_VALUE)     
             
 
         
@@ -495,6 +510,8 @@ def format_like_Kaggle(df, myDataDir, imputation_method, sampling_period, start_
             #df = aggregate(df,sampling_period)
 
 
+        #Reorder some things just in case
+        df = make_index_col_left(df)
         print(df)
 
         #SHould end up with a csv that is rows are series (each id), cols are dates
