@@ -24,11 +24,20 @@ import hparams
 
 
 
-
-FEATURES_SET = 'arturius'# 'arturius' 'simple' 'full'
+# =============================================================================
+# PARAMETRS
+# =============================================================================
+FEATURES_SET = 'full'# 'arturius' 'simple' 'full'
 SAMPLING_PERIOD = 'daily'
 DATA_TYPE = 'ours' #'kaggle' #'ours'
-Nmodels = 3.
+Nmodels = 3
+PARAM_SETTING = 's32' #Which of the parameter settings to use [s32 is the default Kaggle one, with a few thigns modified as I want]
+PARAM_SETTING_FULL_NAME = hparams.params_s32 #Which of the parameter settings to use corresponding to the PARAM_SETTING. The mapping is defined in hparams.py at the end in "sets = {'s32':params_s32,..."
+
+
+
+
+
 
 
 # =============================================================================
@@ -62,33 +71,36 @@ print(df_all.columns)
 # 
 # =============================================================================
 prev = df_all#.loc[:,:'2017-07-08']
-paths = [p for p in tf.train.get_checkpoint_state('data/cpt/s32').all_model_checkpoint_paths]
+paths = [p for p in tf.train.get_checkpoint_state(f'data/cpt/{PARAM_SETTING}').all_model_checkpoint_paths]
 
 #tf.reset_default_graph()
 #preds = predict(paths, default_hparams(), back_offset=0,
 #                    n_models=3, target_model=0, seed=2, batch_size=2048, asgd=True)
 t_preds = []
-for tm in range(3):  #!!!!!!!! Nmodels
+for tm in range(Nmodels):
     tf.reset_default_graph()
-    t_preds.append(predict(FEATURES_SET, SAMPLING_PERIOD, paths, build_hparams(hparams.params_s32), back_offset=0, predict_window=63,
-                    n_models=3, target_model=tm, seed=2, batch_size=2048, asgd=True))
+    t_preds.append(predict(FEATURES_SET, SAMPLING_PERIOD, paths, build_hparams(PARAM_SETTING_FULL_NAME), back_offset=0, predict_window=63,
+                    n_models=Nmodels, target_model=tm, seed=2, batch_size=2048, asgd=True))
 
 
 # =============================================================================
 # average the N models predictions
 # =============================================================================
-preds = sum(t_preds)/Nmodels
+preds = sum(t_preds)/float(Nmodels)
 
 
 # =============================================================================
 # look at missing
 # =============================================================================
 missing_pages = prev.index.difference(preds.index)
+print('missing_pages',missing_pages)
 # Use zeros for missing pages
 rmdf = pd.DataFrame(index=missing_pages,
-                    data=np.tile(0, (len(preds.columns),len(missing_pages))).T, columns=preds.columns)
-f_preds = preds.append(rmdf).sort_index()
-
+                data=np.tile(0, (len(preds.columns),len(missing_pages))).T, columns=preds.columns)
+if DATA_TYPE=='kaggle':
+    f_preds = preds.append(rmdf).sort_index()
+elif DATA_TYPE=='ours':
+    f_preds = preds
 # Use zero for negative predictions
 f_preds[f_preds < 0.5] = 0
 # Rouns predictions to nearest int
@@ -96,14 +108,16 @@ f_preds = np.round(f_preds).astype(np.int64)
 
 
 
+
+print(f_preds)
+
 # =============================================================================
 # save out all predictions all days (for our stuff will be relevant, for his Kaggle maybe just needed one day)
 # =============================================================================
-firstK = 1000 #for size issues, for now while dev, just a few to look at
-ggg = f_preds.iloc[:firstK]
-ggg.to_csv('data/all_days_submission.csv.gz', compression='gzip', index=False, header=True)
-
-
+#firstK = 1000 #for size issues, for now while dev, just a few to look at
+#ggg = f_preds.iloc[:firstK]
+#ggg.to_csv('data/all_days_submission.csv.gz', compression='gzip', index=False, header=True)
+f_preds.to_csv('data/all_predictions_ours.csv.gz', compression='gzip', index=False, header=True)
 
 
 
@@ -122,16 +136,29 @@ pages = ['(236984)_Astier_fr.wikipedia.org_all-access_all-agents', \
 randomK = 1000
 print('Saving figs of {} time series as checks'.format(randomK))
 pagenames = list(f_preds.index)
-pages = np.random.choice(pagenames, size=randomK, replace=False)
+pages = np.random.choice(pagenames, size=min(randomK,len(pagenames)), replace=False)
+N = pages.size
 for jj, page in enumerate(pages):
+    print(f"{jj} of {N}")
     plt.figure()
-    #prev.loc[page].fillna(0).plot(logy=True)
-    f_preds.loc[page].fillna(0).plot(logy=True)
-    #gt.loc[page].fillna(0).plot(logy=True)
-    f_preds.loc[page].plot(logy=True)
+    if DATA_TYPE=='kaggle':
+        prev.loc[page].fillna(0).plot()#logy=True)
+        f_preds.loc[page].fillna(0).plot(logy=True)
+    elif DATA_TYPE=='ours':
+        prev.loc[int(page)].plot()
+        f_preds.loc[page].plot()
     plt.title(page)
+    if not os.path.exists('ex_figs'):
+        os.mkdir('ex_figs')
     pathname = os.path.join('ex_figs', 'fig_{}.png'.format(jj))
     plt.savefig(pathname)
+    plt.close()
+    
+    
+    
+#Cannot view on the AWS so move to local:   
+#zip -r ex_figs.zip ex_figs
+#cp ex_figs.zip /home/...../sync
     
     
     
@@ -141,41 +168,44 @@ for jj, page in enumerate(pages):
     
     
     
-# =============================================================================
-# load, maniupalte test data    
-# =============================================================================
-def read_keys():
-    import os.path
-    key_file = 'data/keys2.pkl'
-    if os.path.exists(key_file):
-        return pd.read_pickle(key_file)
-    else:
-        print('Reading keys...')
-        raw_keys = pd.read_csv('data/key_2.csv.zip')
-        print('Processing keys...')
-        pagedate = raw_keys.Page.str.rsplit('_', expand=True, n=1).rename(columns={0:'page',1:'date_str'})
-        keys = raw_keys.drop('Page', axis=1).assign(page=pagedate.page, date=pd.to_datetime(pagedate.date_str))
-        del raw_keys, pagedate
-        print('Pivoting keys...')
-        pkeys = keys.pivot(index='page', columns='date', values='Id')
-        print('Storing keys...')
-        pkeys.to_pickle(key_file)
-        return pkeys
-keys = read_keys()    
-
-# =============================================================================
-# 
-# =============================================================================
-subm_preds = f_preds.loc[:, '2017-09-13':]
-assert np.all(subm_preds.index == keys.index)
-assert np.all(subm_preds.columns == keys.columns)
-answers = pd.DataFrame({'Id':keys.values.flatten(), 'Visits':np.round(subm_preds).astype(np.int64).values.flatten()})
-answers.to_csv('data/submission.csv.gz', compression='gzip', index=False, header=True)
-
-
-
-print('f_preds')
-print(f_preds)
-
-print('missing')
-print(prev.loc[missing_pages, '2016-12-15':])
+        
+#For the Kaggle data, can also output compeition submission format:    
+if DATA_TYPE=='kaggle':   
+    # =============================================================================
+    # load, maniupalte test data    
+    # =============================================================================
+    def read_keys():
+        import os.path
+        key_file = 'data/keys2.pkl'
+        if os.path.exists(key_file):
+            return pd.read_pickle(key_file)
+        else:
+            print('Reading keys...')
+            raw_keys = pd.read_csv('data/key_2.csv.zip')
+            print('Processing keys...')
+            pagedate = raw_keys.Page.str.rsplit('_', expand=True, n=1).rename(columns={0:'page',1:'date_str'})
+            keys = raw_keys.drop('Page', axis=1).assign(page=pagedate.page, date=pd.to_datetime(pagedate.date_str))
+            del raw_keys, pagedate
+            print('Pivoting keys...')
+            pkeys = keys.pivot(index='page', columns='date', values='Id')
+            print('Storing keys...')
+            pkeys.to_pickle(key_file)
+            return pkeys
+    keys = read_keys()    
+    
+    # =============================================================================
+    # 
+    # =============================================================================
+    subm_preds = f_preds.loc[:, '2017-09-13':]
+    assert np.all(subm_preds.index == keys.index)
+    assert np.all(subm_preds.columns == keys.columns)
+    answers = pd.DataFrame({'Id':keys.values.flatten(), 'Visits':np.round(subm_preds).astype(np.int64).values.flatten()})
+    answers.to_csv('data/submission.csv.gz', compression='gzip', index=False, header=True)
+    
+    
+    
+    print('f_preds')
+    print(f_preds)
+    
+    print('missing')
+    print(prev.loc[missing_pages, '2016-12-15':])

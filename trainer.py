@@ -718,8 +718,16 @@ def predict(features_set, sampling_period, checkpoints, hparams, return_x=False,
                         pred, x, pname = sess.run([model.predictions, model.inp.true_x, model.inp.page_ix])
                     else:
                         pred, pname = sess.run([model.predictions, model.inp.page_ix])
-                    utf_names = [str(name, 'utf-8') for name in pname]
+
+                    #Our data already has page names (id's) as ints, so this decoding won't work, so just do str(id)
+                    try:
+                        utf_names = [str(name, 'utf-8') for name in pname]
+                    except UnicodeDecodeError:
+                        utf_names = [str(name) for name in pname]
+                        
                     pred_df = pd.DataFrame(index=utf_names, data=np.expm1(pred))
+                    print(pred_df)
+                    
                     pred_buffer.append(pred_df)
                     if return_x:
                         # noinspection PyUnboundLocalVariable
@@ -739,7 +747,7 @@ def predict(features_set, sampling_period, checkpoints, hparams, return_x=False,
                 predictions = cp_predictions
             else:
                 predictions += cp_predictions
-    predictions /= len(checkpoints)
+    predictions /= len(checkpoints) #Since it is averaging predictions over the chckpoints
     offset = pd.Timedelta(back_offset, 'D') #!!!!!!!!!!!! need to change these lines when sampling WEEKLY MONTHLY
     start_prediction = inp.data_end + pd.Timedelta('1D') - offset
     end_prediction = start_prediction + pd.Timedelta(predict_window - 1, 'D')

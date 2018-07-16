@@ -421,7 +421,7 @@ class Model:
 
         # Get final denormalized predictions
         vv = decode_predictions(decoder_targets, inp)
-        vv = tf.Print(vv, ['decode_predictions',vv,tf.shape(vv)])
+#        vv = tf.Print(vv, ['decode_predictions',vv,tf.shape(vv)])
         self.predictions = vv
 #        print('self.predictions (still log1p(counts))')
 #        print(self.predictions)
@@ -498,7 +498,7 @@ class Model:
         ggg = tf.cast(tf.equal(ff, ff*0.+267.), tf.float32)
         N_all_NAN_encoder_states = tf.reduce_sum(ggg)
         total = tf.reduce_prod(tf.shape(encoder_state))
-        encoder_state = tf.Print(encoder_state,['encoder_state', tf.shape(encoder_state), encoder_state, 'N_nans', N_nans, 'total', total, 'N_all_NAN_encoder_states', N_all_NAN_encoder_states])
+#        encoder_state = tf.Print(encoder_state,['encoder_state', tf.shape(encoder_state), encoder_state, 'N_nans', N_nans, 'total', total, 'N_all_NAN_encoder_states', N_all_NAN_encoder_states])
         
 
 
@@ -549,7 +549,7 @@ class Model:
             output, state = cell(next_input, prev_state)
             # Make prediction from RNN outputs
             projected_output = project_output(output) #!!!!!!!!!! quantiles
-            projected_output = tf.Print(projected_output, ['time',time,'projected_output',projected_output,tf.shape(projected_output),'output',output,tf.shape(output),'state',state,tf.shape(state) ,'prev_output',prev_output,tf.shape(prev_output) ,'features',features,tf.shape(features),features[1,:18]])
+#            projected_output = tf.Print(projected_output, ['time',time,'projected_output',projected_output,tf.shape(projected_output),'output',output,tf.shape(output),'state',state,tf.shape(state) ,'prev_output',prev_output,tf.shape(prev_output) ,'features',features,tf.shape(features),features[1,:18]])
             
             # Append step results to the buffer arrays
             if return_raw_outputs:
