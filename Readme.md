@@ -43,12 +43,11 @@ See also [detailed model description](how_it_works.md)
 
 GK modifications for own data:
 1. PREPROCESS.py - Maximize reuse of existing architecture: just put my data in exact same format as Kaggle competition csv's
-2. $source activate gktf
+2. $source activate gktf.  #previously set up a conda environment w/ Python 3.6, tensorflow 1.4.0, to match same versions as Kaggle solution
 3. $cd ..../kaggle-web-traffic
 4. $python3 PREPROCESS.py
 5. $python3 make_features.py data/vars kaggle daily arturius --add_days=63 #need to specify the data directory (data/vars) and feature_set {kaggle, simple, full, full_w_context} depending on using default Arturius kaggle vs. own custom for this application; and specify sampling period
-python3 make_features.py data/vars kaggle daily full --add_days=63
-python3 make_features.py data/vars ours daily full --add_days=63
+python3 make_features.py data/vars kaggle daily full --add_days=85
 
 #Just in case making new features
 cd data
@@ -60,11 +59,25 @@ rm *.pkl
 cd ..
 ll data/
 
+python3 make_features.py data/vars ours daily full --add_days=63
+python3 make_features.py data/vars kaggle daily full --add_days=63
+
+
+
+
+
 #no reason to expect 10000 to 11500 is good range to save out. View loss along the way
 python3 trainer.py arturius daily --name s32 --hparam_set=s32 --n_models=3 --asgd_decay=0.99 --max_steps=11500 --save_from_step=10000
 python3 trainer.py full daily --name s32 --hparam_set=s32 --n_models=3 --asgd_decay=0.99 --max_steps=11500 --save_from_step=10000 --patience=10 --predict_window=50
---name TEST_attn_head --hparam_set=TEST_attn_head
+python3 trainer.py full daily --name TEST_attn_head --hparam_set=TEST_attn_head --n_models=3 --asgd_decay=0.99 --max_steps=11500 --save_from_step=10000 --patience=10 --predict_window=50
 --name TEST_stacked --hparam_set=TEST_stacked
+
+--no_eval
+--side_split
+
+python3 trainer.py full daily --name s32 --hparam_set=s32 --n_models=3 --asgd_decay=0.99 --max_steps=11500 --save_from_step=10000 --patience=10 --side_split
+
+
 
 
 7. $python3 PREDICT.py
@@ -76,8 +89,10 @@ python3 trainer.py full daily --name s32 --hparam_set=s32 --n_models=3 --asgd_de
 
 
 To do:
-0. save log files to view SMAPE etc metrics during training
-1. finish PREPROCESS.py to do better imputation using basic forecasting method [just use STL or Theta to fill in small gaps; otherwise remove blocks]
-2. for weekly. monthly inputs, will there be issue in Kaggle code???
+0. print out the SMAPE for the actual data [current is doing SMAPE of the unrounded log1p(data) which will likely be much smaller than for real]
+1. Visualizations of predictions on our own data
+1. why encoder_state NANs in it [is it train predict window completeness thresholds?]
+
+2. for weekly. monthly inputs, need to change few places in tensorflow code
 3. Prediction intervals
 4. Architecture improvements

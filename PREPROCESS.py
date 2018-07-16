@@ -206,12 +206,22 @@ def do_imputation(df,imputation_method):
         cols = new_df.columns.tolist()
         new_df = new_df[cols[-1:]+cols[:-1]]
         new_df.reset_index(drop=True,inplace=True)        
-        return new_df   
+        return new_df
+    
+
+    
     
     
     if (imputation_method == 'median') or (imputation_method == 'mean'):
         df = imputation__simple(df,imputation_method)
-    
+        
+#    if imputation_method == 'lagKmedian':
+#        #First get rid of the big blocks of mising values [more than 1 seasonality long]
+##        df = imputation_big_gaps(df)
+#        #Then deal with the short missing holes
+#        N_seasons = 4
+#        df = imputation_lagKmedian(df,N_seasons)
+        
     else:
         raise Exception('not implemented other methods yet')
     
@@ -232,6 +242,79 @@ def do_imputation(df,imputation_method):
 
 
 
+
+def imputation_lagKmedian_single_series(df,seasonality,N_seasons):
+    """
+    Fill in short missing gaps by replacing missing value with:
+        median over last K weeks for that day.
+        E.g. Monday is missing, so use median count over 4 previous Mondays
+        
+    Intended for short holes. Remove longer ones in chunks of length seasonality.
+    
+    For now assuming that big chunk removal is done AFTER this step.
+    """
+    #If the whole series is empty (all -1):    
+    if np.alltrue(df.drop(columns='Page').values==-1):
+        return df
+
+    max_block_length = seasonality - 1
+    offsets = np.arange(-max_block_length,1,1)
+    
+    cols = list(df.columns)
+    cols = cols[:-1]#only the date cols., not the "Page" col
+#    N_timesteps = len(cols)
+#    print(cols)
+#    print(N_timesteps)
+    c = df['Page'].values
+    _ = df.drop(columns=['Page'])
+#    print(_.values)
+    missing_inds = np.where(_<0.)[1]
+
+
+    if missing_inds.size > 0:
+        #Means there are some missing values
+        #So scan through the data and fill in bad values,
+        #starting after the first real data [ignore all -1's that occur before
+        #time series starts for real]
+        first_real_ind = np.where(_>=0.)[1][0]
+        missing_inds =  missing_inds[missing_inds>first_real_ind]
+#        print(missing_inds)
+        
+        for mi in missing_inds:
+            #Only fill in those gaps that are small holes (less than 1 seasonality)
+            #Check that this particular missing val is not in a missing block 
+            #that has >= 1 seasonality size:
+#            print(mi)
+            in_block = False
+           
+            for off in offsets:
+#                print(_.values)
+                block_inds = np.arange(mi+off,mi+off+seasonality,1)
+#                print(block_inds)
+#                print(block_inds, [i in missing_inds for i in block_inds])
+                if np.alltrue([i in missing_inds for i in block_inds]):
+                    in_block = True
+                    break
+#                x = _.values[0][mi+off : mi+off+seasonality]
+#                if np.alltrue(x==-1):
+            if in_block:
+                continue 
+            #If it is not in a completely missing block [at least 1 value is recorded], then do lag K median:
+            prev_K_inds = np.arange(mi-seasonality, max(0, mi - N_seasons*(seasonality+1)), -seasonality).tolist()
+            t = _[_.columns[prev_K_inds]].values
+            t = t[t>=0]
+            imputed_val = np.median(t)
+            #If all K previous timesteps were -1, then would give nan, so set manually to -1:
+            if np.isnan(imputed_val):# == np.nan:
+                imputed_val = -1
+            _[_.columns[mi]] = imputed_val
+            
+#        g = np.where(_<0.)[1]
+#        g = g[g>first_real_ind]
+#        print(g)
+#        print('\n'*3)
+    _['Page'] = c
+    return _
 
 
 
@@ -352,9 +435,23 @@ def format_like_Kaggle(df, myDataDir, imputation_method, sampling_period, start_
             dd = pd.DataFrame(dates).T 
             dd['Page'] = u
             
-            #Make a good eay cae to overfit
-            dd*= 0.
-            dd += u
+            print(i,u)
+            if imputation_method=='lagKmedian':
+                if sampling_period=='daily':
+                    N_seasons = 4
+                    seasonality = 7
+                elif sampling_period=='weekly':
+                    N_seasons = 4
+                    seasonality = 1
+                dd = imputation_lagKmedian_single_series(dd,seasonality,N_seasons)
+
+#            if i == 58:
+#                v=eeeeee
+            #Make a good easy case to overfit
+            DEBUG = False
+            if DEBUG:
+                dd*= 0.
+                dd += u
             
             
             #If doing imputation / other
@@ -367,6 +464,8 @@ def format_like_Kaggle(df, myDataDir, imputation_method, sampling_period, start_
         #cols = df.columns.tolist()
         #df = df[cols[-1:]+cols[:-1]]
         df.reset_index(drop=True,inplace=True)
+        
+        
         
         
         #If we did aggregation, then above reogranization will have many of the columns Nan / -1,
@@ -389,7 +488,7 @@ def format_like_Kaggle(df, myDataDir, imputation_method, sampling_period, start_
         
         
         #Imputation, dealing with missing seasonality blocks / out of phase
-        if imputation_method:
+        if imputation_method=='median' or imputation_method=='mean':
             df = do_imputation(df,imputation_method)
             #Could do impoutation then downsampling, vs. downsampling then imputation ... unclear which is better here in general.
             #for now assume we do ipmutation THEN aggregation:
@@ -445,7 +544,7 @@ if __name__ == '__main__':
     # =============================================================================
     # TOTAL COMPLETED TRIPS:
     myDataDir = r"/Users/kocher/Desktop/forecasting/exData/totalCompletedTripsDaily"
-    IMPUTATION_METHOD = None #'median' #'STL' #None
+    IMPUTATION_METHOD = 'lagKmedian' #'median' #'STL' #'lagKmedian' #None
     START_DATE = '2015-01-01' #None
     END_DATE = '2017-12-31' #None
     REMOVE_ID_LIST = []#[3,4]#id's for locations that are no longer useful
