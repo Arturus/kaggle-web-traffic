@@ -131,7 +131,7 @@ class InputPipe:
         :param counts: counts timeseries
         :param start: start index
         :param end: end index
-        :return: tuple (train_counts, test_counts, lagged_counts, [dow,woy,moy])
+        :return: tuple (train_counts, test_counts, lagged_counts, [dow,woy,moy,year])
         """
         # Pad counts to ensure we have enough array length for prediction
         counts = tf.concat([counts, tf.fill([self.predict_window], np.NaN)], axis=0)
@@ -155,6 +155,8 @@ class InputPipe:
 #            cropped_dow = 0*cropped_moy
 #            cropped_woy = 0*cropped_moy            
             
+        #ANd use year as a feature to get long term trend
+        cropped_year = self.inp.year[start:end]
 
         
         # =============================================================================
@@ -192,11 +194,11 @@ class InputPipe:
 
         if self.features_set=='arturius' or self.features_set=='full':#for now, for full just do sam [include lagged]
             if self.sampling_period=='daily':
-                return x_counts, y_counts, lagged_count, cropped_dow, cropped_woy
+                return x_counts, y_counts, lagged_count, cropped_dow, cropped_woy, cropped_year
             if self.sampling_period=='weekly':
-                return x_counts, y_counts, lagged_count, cropped_woy
+                return x_counts, y_counts, lagged_count, cropped_woy, cropped_year
             if self.sampling_period=='monthly':
-                return x_counts, y_counts, lagged_count, cropped_moy
+                return x_counts, y_counts, lagged_count, cropped_moy, cropped_year
             
 #        elif self.features_set=='full':
 #            return aaaaaaaaaaa #can drop lagged 
@@ -273,22 +275,22 @@ class InputPipe:
         print(args)
         if self.features_set == 'arturius':
             if self.sampling_period == 'daily':
-                x_counts, y_counts, lagged_counts, dow, woy, pf_agent, pf_country, pf_site, page_ix, count_median, year_autocorr, quarter_autocorr, count_pctl_100 = args
+                x_counts, y_counts, lagged_counts, dow, woy, year, pf_agent, pf_country, pf_site, page_ix, count_median, year_autocorr, quarter_autocorr, count_pctl_100 = args
             elif self.sampling_period == 'weekly':
-                x_counts, y_counts, lagged_counts, woy, pf_agent, pf_country, pf_site, page_ix, count_median, year_autocorr, quarter_autocorr, count_pctl_100 = args        
+                x_counts, y_counts, lagged_counts, woy, year, pf_agent, pf_country, pf_site, page_ix, count_median, year_autocorr, quarter_autocorr, count_pctl_100 = args        
             elif self.sampling_period == 'monthly':
-                x_counts, y_counts, lagged_counts, moy, pf_agent, pf_country, pf_site, page_ix, count_median, year_autocorr, quarter_autocorr, count_pctl_100 = args          
+                x_counts, y_counts, lagged_counts, moy, year, pf_agent, pf_country, pf_site, page_ix, count_median, year_autocorr, quarter_autocorr, count_pctl_100 = args          
         #For now just use the same ...
 #        count_pctl_0, count_pctl_5, count_pctl_25, count_pctl_75, count_pctl_95, count_pctl_100, count_variance)
         elif self.features_set == 'full':
             if self.sampling_period == 'daily':
-                x_counts, y_counts, lagged_counts, dow, woy, page_ix, count_median, year_autocorr, quarter_autocorr,\
+                x_counts, y_counts, lagged_counts, dow, woy, year, page_ix, count_median, year_autocorr, quarter_autocorr,\
                 count_pctl_0, count_pctl_5, count_pctl_25, count_pctl_75, count_pctl_95, count_pctl_100, count_variance = args
             elif self.sampling_period == 'weekly':
-                x_counts, y_counts, lagged_counts, woy, page_ix, count_median, year_autocorr, quarter_autocorr,\
+                x_counts, y_counts, lagged_counts, woy, year, page_ix, count_median, year_autocorr, quarter_autocorr,\
                 count_pctl_0, count_pctl_5, count_pctl_25, count_pctl_75, count_pctl_95, count_pctl_100, count_variance = args
             elif self.sampling_period == 'monthly':
-                x_counts, y_counts, lagged_counts, moy, page_ix, count_median, year_autocorr, quarter_autocorr,\
+                x_counts, y_counts, lagged_counts, moy, year, page_ix, count_median, year_autocorr, quarter_autocorr,\
                 count_pctl_0, count_pctl_5, count_pctl_25, count_pctl_75, count_pctl_95, count_pctl_100, count_variance = args
         
         # =============================================================================
@@ -301,6 +303,11 @@ class InputPipe:
             x_woy, y_woy = tf.split(woy, [self.train_window, self.predict_window], axis=0)
         elif self.sampling_period == 'monthly':
             x_moy, y_moy = tf.split(moy, [self.train_window, self.predict_window], axis=0)
+
+        #Already did a manual kind of scaling for year in make_features.py so don't need to normalize here...
+        x_year, y_year = tf.split(year, [self.train_window, self.predict_window], axis=0)
+        x_year = tf.expand_dims(x_year,axis=1)
+        y_year = tf.expand_dims(y_year,axis=1)
 
         # Normalize counts
         mean = tf.reduce_mean(x_counts)
@@ -347,11 +354,11 @@ class InputPipe:
         # Train features, depending on measurement frequency
         x_features = tf.expand_dims(norm_x_counts, -1) # [n_timesteps] -> [n_timesteps, 1]
         if self.sampling_period == 'daily':
-            x_features = tf.concat([x_features, x_dow, x_woy], axis=1)
+            x_features = tf.concat([x_features, x_dow, x_woy, x_year], axis=1)
         elif self.sampling_period == 'weekly':
-            x_features = tf.concat([x_features, x_woy], axis=1)            
+            x_features = tf.concat([x_features, x_woy, x_year], axis=1)            
         elif self.sampling_period == 'monthly':
-            x_features = tf.concat([x_features, x_moy], axis=1)             
+            x_features = tf.concat([x_features, x_moy, x_year], axis=1)             
         #Regardess of period/frequency will have below features:
         x_features = tf.concat([x_features, x_lagged,
                                 # Stretch series_features to all training days
@@ -360,11 +367,11 @@ class InputPipe:
 
         # Test features
         if self.sampling_period == 'daily':
-            y_features = tf.concat([y_dow, y_woy], axis=1)
+            y_features = tf.concat([y_dow, y_woy, y_year], axis=1)
         elif self.sampling_period == 'weekly':
-            y_features = y_woy + 0
+            y_features = tf.concat([y_woy, y_year], axis=1)
         elif self.sampling_period == 'monthly':
-            y_features = y_moy + 0
+            y_features = tf.concat([y_moy, y_year], axis=1)
         #Regardess of period/frequency will have below features:
         y_features = tf.concat([y_features, y_lagged,
                                 # Stretch series_features to all testing days
@@ -500,7 +507,7 @@ def page_features(inp: VarFeeder, features_set):
     So do not need to pass in here the time-varying ones like day of week, 
     month of year, lagged, etc.
     
-    DO NOT return dow, woy, moy
+    DO NOT return dow, woy, moy, year
     """
     
     if features_set=='arturius':
@@ -509,8 +516,8 @@ def page_features(inp: VarFeeder, features_set):
                 inp.count_pctl_100
                 )
         
-    elif features_set=='simple':
-        raise Exception('not ready yet')
+#    elif features_set=='simple':
+#        raise Exception('not ready yet')
         
     elif features_set=='full':
         d = (inp.counts,
@@ -525,7 +532,7 @@ def page_features(inp: VarFeeder, features_set):
             inp.count_pctl_100,
             inp.count_variance)          
         
-    elif features_set=='full_w_context':
-        raise Exception('not ready yet')
+#    elif features_set=='full_w_context':
+#        raise Exception('not ready yet')
     
     return d

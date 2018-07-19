@@ -346,6 +346,11 @@ def run():
     WEEK_NUMBER_METHOD = 'floor7'#'pandas' #'floor7'
     WEEK_NUMBER_MAX = 53. #52.
     
+    REFERENCE_FIRST_YEAR = 2010 #Use the year number as a feature, calculated as (year-REF_1)/(REF_2 - REF_1) to put on smaller scale 
+    #(must be careful about normalizing on the fly within window, where depending on window size, most observations will have same year number, and 0 variance)
+    #so do this manual scaling instead of standard mean-var scaling
+    REFERENCE_LAST_YEAR = 2020
+    
     
     features_times = pd.date_range(data_start, features_end, freq='D')
     
@@ -364,9 +369,6 @@ def run():
         woy_norm = week / year_period #not sure if by default this starts on Monday vs Sunday
         woy = np.stack([np.cos(woy_norm), np.sin(woy_norm)], axis=-1)
     
-        #To catch longer term trending data, can also include year number. [depending on size of train / prediction windows and random sampling boundaries could be same value over whole series]
-        year_number = features_times.year
-    
     
     if args.sampling_period=='weekly':
         #index of week number, when sampling at WEEKLY level (this is different than above)
@@ -379,7 +381,6 @@ def run():
         year_period = WEEK_NUMBER_MAX / (2 * np.pi) #!!!! need to be carefuly non-uniform weeks [52 has 10 days ???]  ---> actually in pandas numbering goes to 53, depending on start day of week for that year
         woy_norm = week / year_period #not sure if by default this starts on Monday vs Sunday
         woy = np.stack([np.cos(woy_norm), np.sin(woy_norm)], axis=-1)
-        year_number = features_times.year
     
     if args.sampling_period=='monthly':
         #month index (only used if sampling monthly)
@@ -387,8 +388,9 @@ def run():
         period = 12. / (2 * np.pi) #!!!! need to be carefuly non-uniform weeks [52 has 10 days ???]  ---> actually in pandas numbering goes to 53, depending on start day of week for that year
         moy_norm = features_times.month.values / period #not sure if by default this starts on Monday vs Sunday
         moy = np.stack([np.cos(moy_norm), np.sin(moy_norm)], axis=-1)    
-        year_number = features_times.year
 
+    #To catch longer term trending data, can also include year number. [depending on size of train / prediction windows and random sampling boundaries could be same value over whole series]
+    year = (features_times.year - REFERENCE_FIRST_YEAR)/float(REFERENCE_LAST_YEAR-REFERENCE_FIRST_YEAR)
     
     
     # Assemble indices for quarterly lagged data
@@ -420,12 +422,12 @@ def run():
             count_pctl_100=percentiles[5],#max #!!!!!!!!!!!!!!!! just to see what happens: apend one of my features.
         )
     
-    elif args.features_set == 'simple':
-        tensors = dict(
-            counts=df,
-            count_median=count_median,#this is just the median feature, can put in others too
-            #dow=dow,
-        )    
+#    elif args.features_set == 'simple':
+#        tensors = dict(
+#            counts=df,
+#            count_median=count_median,#this is just the median feature, can put in others too
+#            #dow=dow,
+#        )    
         
     elif (args.features_set == 'full') or (args.features_set == 'full_w_context'):
         tensors = dict(
@@ -450,15 +452,12 @@ def run():
 #            series_length=series_length,#length of series [number of samples] to get idea of how much history a series has #number nonzero
             
             #Other time-frequency/scale features
+            #tsfresh features
             #...
-            
-
         )  
         
     else:
         raise Exception(f'features_set must be specified\nOne of ["arturius","simple","full","full_w_context"]')
-
-
 
         
     if args.sampling_period=='daily':
@@ -470,8 +469,11 @@ def run():
         tensors['moy']=moy
     else:
         raise Exception('Must specify correct sampling period')
+    
+    #Also use year number as feature
+    tensors['year']=year
             
-            
+    
     """#If provide other info based on e.g. new location (any features that are not derived purely from the time series)
     if args.features_set == 'full_w_context':
         tensors['country'] = asdasdasd
