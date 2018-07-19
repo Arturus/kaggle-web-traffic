@@ -16,6 +16,8 @@ RNN = cudnn_rnn.CudnnGRU
 
 
 
+
+
 def debug_tensor_print(tensor):
     """
     Debugging mode:
@@ -237,7 +239,7 @@ def smape_loss(true, predicted, weights):
     return tf.losses.compute_weighted_loss(smape, weights, loss_collection=None)
 
 
-def decode_predictions(decoder_readout, inp: InputPipe):
+def decode_predictions(decoder_readout, inp: InputPipe):#!!!!!quantiles
     """
     Converts normalized prediction values to log1p(pageviews), e.g. reverts normalization
     :param decoder_readout: Decoder output, shape [n_days, batch]
@@ -245,7 +247,7 @@ def decode_predictions(decoder_readout, inp: InputPipe):
     :return:
     """
     # [n_days, batch] -> [batch, n_days]
-    batch_readout = tf.transpose(decoder_readout)
+    batch_readout = tf.transpose(decoder_readout) #!!!!!quantiles
     batch_std = tf.expand_dims(inp.norm_std, -1)
     batch_mean = tf.expand_dims(inp.norm_mean, -1)
     
@@ -254,7 +256,7 @@ def decode_predictions(decoder_readout, inp: InputPipe):
     return ret
 
 
-def calc_loss(predictions, true_y, additional_mask=None):
+def calc_loss(predictions, true_y, additional_mask=None):#!!!!!quantiles
     """
     Calculates losses, ignoring NaN true values (assigning zero loss to them)
     :param predictions: Predicted values
@@ -276,7 +278,7 @@ def calc_loss(predictions, true_y, additional_mask=None):
                                                                                   weights), tf.size(true_y)
 
 
-def make_train_op(loss, ema_decay=None, prefix=None):
+def make_train_op(loss, ema_decay=None, prefix=None):#!!!!!quantiles
     #optimizer = COCOB()
     ##train.AdamOptimizer train.GradientDescentOptimizer
     optimizer = tf.train.AdamOptimizer() #!!!!!try simpler optimizer on our data.
@@ -473,9 +475,13 @@ class Model:
                 has_dropout = hparams.decoder_input_dropout[idx] < 1 \
                               or hparams.decoder_state_dropout[idx] < 1 or hparams.decoder_output_dropout[idx] < 1
 
+                #context size alone may be as big as decoder state size?? Then input-> hidden would be a down projection...
+                #so maybe do a projection down, on the encoder side first [e.g. encoder output??] then better here...
                 if self.is_train and has_dropout:
                     attn_depth = attn_features.shape[-1].value if attn_features is not None else 0
-                    input_size = attn_depth + prediction_inputs.shape[-1].value + 1 if idx == 0 else self.hparams.rnn_depth
+                    context_depth = encoder_state.shape[-1].value if self.hparams.RECURSIVE_W_ENCODER_CONTEXT is not None else 0
+                    input_size = attn_depth + context_depth + prediction_inputs.shape[-1].value + 1 if idx == 0 else self.hparams.rnn_depth
+                    input_size = tf.Print(input_size, ['attn_depth',tf.shape(attn_depth),attn_depth, 'context_depth',tf.shape(context_depth),context_depth, 'input_size',tf.shape(input_size),input_size])#!!!!!!!!!!
                     cell = rnn.DropoutWrapper(cell, dtype=tf.float32, input_size=input_size,
                                               variational_recurrent=hparams.decoder_variational_dropout[idx],
                                               input_keep_prob=hparams.decoder_input_dropout[idx],
@@ -505,7 +511,7 @@ class Model:
 
         nest.assert_same_structure(encoder_state, cell.state_size)
         predict_timesteps = self.inp.predict_window
-        assert prediction_inputs.shape[1] == predict_timesteps
+        assert prediction_inputs.shape[1] == predict_timesteps #!!!!!!!quantiles
 
         # [batch_size, time, input_depth] -> [time, batch_size, input_depth]
         inputs_by_time = tf.transpose(prediction_inputs, [1, 0, 2])
@@ -544,6 +550,13 @@ class Model:
             else:
                 next_input = tf.concat([prev_output, features], axis=1)
                 # Append previous predicted value to input features
+
+            #If using more of a typical encoder-decoder, also have encoder context each time:
+            if self.hparams.RECURSIVE_W_ENCODER_CONTEXT:
+#                encoder_state = tf.Print(next_input,['encoder_state',tf.shape(encoder_state),encoder_state])
+                next_input = tf.concat([next_input, encoder_state], axis=1)
+#                next_input = tf.Print(next_input,['next_input',tf.shape(next_input),next_input])
+               
 
             # Run RNN cell
             output, state = cell(next_input, prev_state)

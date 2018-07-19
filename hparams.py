@@ -40,6 +40,13 @@ params_s32 = dict(
     encoder_activation_loss=1e-06, # max 0.001
     decoder_stability_loss=0.0, # max 100
     decoder_activation_loss=5e-06,  # max 0.001
+    
+    #Kaggle model architecture is more like a basic many-to-many RNN, not really a
+    #usual encoder-decoder architecture since computational graph does not have 
+    #connections from encoded representation to each decoder time step (only to 1st
+    #decoder timestep). Set below to True to use encoder-decoder; set False to use
+    #Kaggle architecture not really true encoder-decoder
+    RECURSIVE_W_ENCODER_CONTEXT=True, 
 )
 
 
