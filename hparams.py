@@ -5,7 +5,7 @@ import re
 params_s32 = dict(
     batch_size=123,#256,
     #train_window=380,
-    train_window=283,
+#    train_window=283,#now make this a bash input to do train-validation window size performance heatmaps
     #train_window=30,#try 65 w our data to see if allows more samples through filter
     train_skip_first=0,
     rnn_depth=267,

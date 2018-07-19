@@ -23,6 +23,7 @@ from sklearn.preprocessing import Imputer
 from collections import Counter
 
 from copy import deepcopy
+from scipy.signal import medfilt
 
 
 def load_my_data(myDataDir):
@@ -205,7 +206,7 @@ def do_imputation(df,imputation_method):
         #Put "Page" at left
         cols = new_df.columns.tolist()
         new_df = new_df[cols[-1:]+cols[:-1]]
-        new_df.reset_index(drop=True,inplace=True)        
+        new_df.reset_index(drop=True,inplace=True)
         return new_df
     
 
@@ -314,6 +315,89 @@ def imputation_lagKmedian_single_series(df,seasonality,N_seasons,out_of_range_fi
     _['Page'] = c
     return _
 
+
+
+
+def data_augmentation(df, jitter_pcts_list=[.05,.10,.15], do_low_pass_filter=True, additive_trend=False):
+    """
+    Do some basic data augmentation with a few different options.
+    Then output Cartesian product of all these variations as the final set.
+    
+    Any missing point (NAN) will be left as NAN, but others will be modified in some way
+    """
+    
+    def jitter__uniform_pcts(df, jitter_pcts_list, N_perturbations):
+        """
+        On each observed value (non-NAN), add +/- jitter up to some
+        percent of the observed value. Either positive or negative.
+        If the count is small, then just leave it, otherwise perturb
+        (always leaving counts positive).
+        """
+        page = df['Page'].values[0]
+        cols = df.columns
+        x = df.drop(columns=['Page']).values[0]
+        dflist = []
+        for uniform_jitter in jitter_pcts_list:
+            ids = [str(page) + '__unijit{}_'.format(str(uniform_jitter)) + str(kk+1) for kk in range(N_perturbations)]
+            _ = np.zeros((N_perturbations,x.size))
+            f = lambda i: np.random.uniform(-uniform_jitter*i,uniform_jitter*i) if not np.isnan(i) else np.nan
+            for kk in range(N_perturbations):
+                _[kk] = [i + f(i) for i in x]# ).reshape(1,x.size)
+            d = {cols[i]:_[:,i] for i in range(x.size)}
+            df = pd.DataFrame(data=d)
+            df['Page'] = ids
+            dflist += [df]
+        df = pd.concat(dflist,axis=0)
+        df.reset_index(drop=True,inplace=True)
+        return df
+
+
+    def add_trend(df, slopes_list):
+        """
+        On each observed value (non-NAN), add +/- X_t, where X_t is from a 
+        linear trend with given slope, applied across whole series.
+        
+        Could change the character of the time series a lot so maybe not so good?
+        """
+        return df
+
+    def low_pass_filter(df, filter_type, kernel_size):
+        """
+        Low-pass filter the data with some kind of kernel, with some kernel size.
+        
+        Is going to smooth out the data a lot, not sure if this will change the
+        time series too much to be good??
+        """
+        page = df['Page'].values[0]
+        cols = df.columns
+        x = df.drop(columns=['Page']).values[0]
+        ids = [str(page) + '__{0}{1}'.format(filter_type.func_name,kernel_size)]
+        y = filter_type(x,kernel_size=kernel_size)
+        _ = np.where(np.invert(np.isnan(x)),y,np.nan)
+        d = {cols[i]:_[i] for i in range(x.size)}
+        df = pd.DataFrame(data=d,index=[0])
+        df['Page'] = ids
+        return df
+
+
+    #For each method, do 5x random
+    N_perturbations = 5
+    dflist = [df]
+    if jitter_pcts_list:
+        dflist += [jitter__uniform_pcts(df, jitter_pcts_list, N_perturbations)]
+    if do_low_pass_filter:
+        filter_type = medfilt
+        kernel_size = 7
+        dflist += [low_pass_filter(df, filter_type, kernel_size)]
+    if additive_trend:
+        slopes_list = [-1.1, 1.1]
+        dflist += [add_trend(df, slopes_list)]        
+#    if autoencoder:
+#        #Run through autoencoder, do VAE, get resulting series
+    
+    df = pd.concat(dflist,axis=0)    
+    return df
+        
 
 
 def format_like_Kaggle(df, myDataDir, imputation_method, sampling_period, start_date=None, end_date=None):
@@ -450,7 +534,7 @@ def format_like_Kaggle(df, myDataDir, imputation_method, sampling_period, start_
             dd = pd.DataFrame(dates).T 
             dd['Page'] = u
             
-            print(i,u)
+            print(i,u, 'of {}'.format(unique_ids[-1]))
             if imputation_method=='lagKmedian':
                 if sampling_period=='daily':
                     N_seasons = 4
@@ -460,18 +544,8 @@ def format_like_Kaggle(df, myDataDir, imputation_method, sampling_period, start_
                     seasonality = 1
                 dd = imputation_lagKmedian_single_series(dd,seasonality,N_seasons,OUT_OF_RANGE_FILL_VALUE)
 
-#            if i == 58:
-#                v=eeeeee
-            #Make a good easy case to overfit
-            DEBUG = False
-            if DEBUG:
-                dd*= 0.
-                dd += u
-            
-            
-            #If doing imputation / other
-            #for each series individually
-            #...
+            #Data augmentation
+            dd = data_augmentation(dd)
             
             df_list.append(dd)
         
@@ -479,8 +553,6 @@ def format_like_Kaggle(df, myDataDir, imputation_method, sampling_period, start_
         #cols = df.columns.tolist()
         #df = df[cols[-1:]+cols[:-1]]
         df.reset_index(drop=True,inplace=True)
-        
-        
         
         
         #If we did aggregation, then above reogranization will have many of the columns Nan / -1,
@@ -566,7 +638,7 @@ if __name__ == '__main__':
     END_DATE = '2017-12-31' #None
     REMOVE_ID_LIST = []#[3,4]#id's for locations that are no longer useful
     SAMPLING_PERIOD = 'daily' #'daily', 'weekly', 'monthly'
-
+    RANDOM_SEED = None
 
     # =============================================================================
     #     MAIN
@@ -577,6 +649,9 @@ if __name__ == '__main__':
     print('IMPUTATION_METHOD',IMPUTATION_METHOD)
     print('myDataDir',myDataDir)
     print('SAMPLING_PERIOD',SAMPLING_PERIOD)
+    
+    #Seed random number generator in case of doing data augmentation:
+    np.random.seed(RANDOM_SEED)
     
     #Load
     df = load_my_data(myDataDir)

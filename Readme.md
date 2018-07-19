@@ -47,7 +47,7 @@ GK modifications for own data:
 3. $cd ..../kaggle-web-traffic
 4. $python3 PREPROCESS.py
 5. $python3 make_features.py data/vars kaggle daily arturius --add_days=63 #need to specify the data directory (data/vars) and feature_set {kaggle, simple, full, full_w_context} depending on using default Arturius kaggle vs. own custom for this application; and specify sampling period
-python3 make_features.py data/vars kaggle daily full --add_days=85
+python3 make_features.py data/vars kaggle daily full --add_days=63
 
 #Just in case making new features
 cd data
@@ -74,8 +74,14 @@ python3 trainer.py full daily --name TEST_attn_head --hparam_set=TEST_attn_head 
 
 --no_eval
 --side_split
+--max_epoch=1000
+--save_from_step=1
+--verbose
 
-python3 trainer.py full daily --name s32 --hparam_set=s32 --n_models=3 --asgd_decay=0.99 --max_steps=11500 --save_from_step=10000 --patience=10 --side_split
+
+python3 trainer.py full daily --name s32 --hparam_set=s32 --n_models=3 --asgd_decay=0.99 --max_steps=11500 --save_from_step=10000 --patience=10 --predict_window=50 --train_window=100
+
+python3 trainer.py full daily --name s32 --hparam_set=s32 --n_models=3 --asgd_decay=0.99 --max_steps=11500 --save_from_step=10 --max_epoch=1000 --patience=50 --verbose --side_split
 
 
 
@@ -90,9 +96,13 @@ python3 trainer.py full daily --name s32 --hparam_set=s32 --n_models=3 --asgd_de
 
 To do:
 0. print out the SMAPE for the actual data [current is doing SMAPE of the unrounded log1p(data) which will likely be much smaller than for real]
-1. Visualizations of predictions on our own data
-1. why encoder_state NANs in it [is it train predict window completeness thresholds?]
+0. SMAPEs on ground truth 2018
+1. why encoder_state NANs in it for small train window lengths [is it train/predict window completeness thresholds?]
+1. performance heatmaps
 
 2. for weekly. monthly inputs, need to change few places in tensorflow code
 3. Prediction intervals
-4. Architecture improvements
+4. Architecture improvements: his is not the usual encoder-decoder:   add C context vector to every decoder step
+4. bi, di, MH
+5. custom attention
+6. VAE aug

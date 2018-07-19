@@ -400,14 +400,14 @@ def train(features_set, sampling_period, name, hparams, multi_gpu=False, n_model
           seed=None, logdir='data/logs', max_epoch=100, patience=2, train_sampling=1.0,
           eval_sampling=1.0, eval_memsize=5, gpu=0, gpu_allow_growth=False, save_best_model=False,
           forward_split=False, write_summaries=False, verbose=False, asgd_decay=None, tqdm=True,
-          side_split=True, max_steps=None, save_from_step=None, do_eval=True, predict_window=63):
+          side_split=True, max_steps=None, save_from_step=None, do_eval=True, predict_window=63, train_window=283):
 
     eval_k = int(round(26214 * eval_memsize / n_models))
     eval_batch_size = int(
         eval_k / (hparams.rnn_depth * hparams.encoder_rnn_layers))  # 128 -> 1024, 256->512, 512->256
     eval_pct = 0.1
     batch_size = hparams.batch_size
-    train_window = hparams.train_window
+#    train_window = hparams.train_window
     tf.reset_default_graph()
     if seed:
         tf.set_random_seed(seed)
@@ -673,15 +673,14 @@ def train(features_set, sampling_period, name, hparams, multi_gpu=False, n_model
 
 
 def predict(features_set, sampling_period, checkpoints, hparams, return_x=False, verbose=False, predict_window=6, back_offset=0, n_models=1,
-            target_model=0, asgd=False, seed=1, batch_size=1024):
+            target_model=0, asgd=False, seed=1, batch_size=1024, train_window=283):
     with tf.variable_scope('input') as inp_scope:
         with tf.device("/cpu:0"):
             inp = VarFeeder.read_vars("data/vars")
-            pipe = InputPipe(features_set, sampling_period, inp, page_features(inp, features_set), inp.N_time_series, mode=ModelMode.PREDICT, batch_size=batch_size, #!!!!!!!!!!!!!!!! page_features
-                             n_epoch=1, verbose=verbose,
+            pipe = InputPipe(features_set, sampling_period, inp, page_features(inp, features_set), inp.N_time_series, mode=ModelMode.PREDICT, batch_size=batch_size,
                              train_completeness_threshold=0.01,
                              predict_window=predict_window,
-                             predict_completeness_threshold=0.0, train_window=hparams.train_window,
+                             predict_completeness_threshold=0.0, train_window=train_window,#hparams.train_window,
                              back_offset=back_offset)
     asgd_decay = 0.99 if asgd else None
     if n_models == 1:
@@ -754,7 +753,8 @@ def predict(features_set, sampling_period, checkpoints, hparams, return_x=False,
     predictions.columns = pd.date_range(start_prediction, end_prediction)
     if return_x:
         x = pd.concat(x_buffer)
-        start_data = inp.data_end - pd.Timedelta(hparams.train_window - 1, 'D') - back_offset
+        #start_data = inp.data_end - pd.Timedelta(hparams.train_window - 1, 'D') - back_offset
+        start_data = inp.data_end - pd.Timedelta(train_window - 1, 'D') - back_offset #!!!!!now for heatmaps
         end_data = inp.data_end - back_offset
         x.columns = pd.date_range(start_data, end_data)
         return predictions, x
@@ -790,6 +790,7 @@ if __name__ == '__main__':
     parser.add_argument('--max_steps', type=int, help="Stop training after max steps")
     parser.add_argument('--save_from_step', type=int, help="Save model on each evaluation (10 evals per epoch), starting from this step")
     parser.add_argument('--predict_window', default=63, type=int, help="Number of days to predict")
+    parser.add_argument('--train_window', default=283, type=int, help="Train window chunk size")#Now that we want to do train size - val size performance heatmaps
     args = parser.parse_args()
 
     param_dict = dict(vars(args))

@@ -33,7 +33,7 @@ DATA_TYPE = 'ours' #'kaggle' #'ours'
 Nmodels = 3
 PARAM_SETTING = 's32' #Which of the parameter settings to use [s32 is the default Kaggle one, with a few thigns modified as I want]
 PARAM_SETTING_FULL_NAME = hparams.params_s32 #Which of the parameter settings to use corresponding to the PARAM_SETTING. The mapping is defined in hparams.py at the end in "sets = {'s32':params_s32,..."
-
+OUTPUT_DIR = 'output'
 
 
 
@@ -117,7 +117,7 @@ print(f_preds)
 #firstK = 1000 #for size issues, for now while dev, just a few to look at
 #ggg = f_preds.iloc[:firstK]
 #ggg.to_csv('data/all_days_submission.csv.gz', compression='gzip', index=False, header=True)
-f_preds.to_csv('data/all_predictions_ours.csv.gz', compression='gzip', index=False, header=True)
+f_preds.to_csv(f'{OUTPUT_DIR}/all_predictions_ours.csv.gz', compression='gzip', index=False, header=True)
 
 
 
@@ -148,17 +148,17 @@ for jj, page in enumerate(pages):
         prev.loc[int(page)].plot()
         f_preds.loc[page].plot()
     plt.title(page)
-    if not os.path.exists('ex_figs'):
-        os.mkdir('ex_figs')
-    pathname = os.path.join('ex_figs', 'fig_{}.png'.format(jj))
+    if not os.path.exists(OUTPUT_DIR):
+        os.mkdir(OUTPUT_DIR)
+    pathname = os.path.join(OUTPUT_DIR, 'fig_{}.png'.format(jj))
     plt.savefig(pathname)
     plt.close()
     
     
     
 #Cannot view on the AWS so move to local:   
-#zip -r ex_figs.zip ex_figs
-#cp ex_figs.zip /home/...../sync
+#zip -r output.zip output
+#cp output.zip /home/...../sync
     
     
     
@@ -200,7 +200,7 @@ if DATA_TYPE=='kaggle':
     assert np.all(subm_preds.index == keys.index)
     assert np.all(subm_preds.columns == keys.columns)
     answers = pd.DataFrame({'Id':keys.values.flatten(), 'Visits':np.round(subm_preds).astype(np.int64).values.flatten()})
-    answers.to_csv('data/submission.csv.gz', compression='gzip', index=False, header=True)
+    answers.to_csv(f'{OUTPUT_DIR}/submission.csv.gz', compression='gzip', index=False, header=True)
     
     
     
