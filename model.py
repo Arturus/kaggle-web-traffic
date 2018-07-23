@@ -7,7 +7,10 @@ import tensorflow.contrib.layers as layers
 from tensorflow.python.util import nest
 
 from cocob import COCOB
+from Adam_HD_optimizer import AdamHDOptimizer
+from SGDN_HD_optimizer import MomentumSGDHDOptimizer
 from input_pipe import InputPipe, ModelMode
+
 
 GRAD_CLIP_THRESHOLD = 10
 RNN = cudnn_rnn.CudnnGRU
@@ -173,7 +176,7 @@ def attn_readout_v3(readout, attn_window, attn_heads, page_features, seed):
     # [batch(readout_depth), width, channels] -> [batch, height=1, width, channels]
     inp = readout[:, tf.newaxis, :, :]
 
-    # attn_window = train_window - predict_window + 1
+    # attn_window = history_window_size - horizon_window_size + 1
     # [batch, attn_window * n_heads]
     filter_logits = tf.layers.dense(page_features, attn_window * attn_heads, name="attn_focus",
                                     kernel_initializer=default_init(seed)
@@ -191,15 +194,15 @@ def attn_readout_v3(readout, attn_window, attn_heads, page_features, seed):
 
     # [width(attn_window), channels(batch), n_heads] -> [height(1), width(attn_window), channels(batch), multiplier(n_heads)]
     attn_filter = attns_max[tf.newaxis, :, :, :]
-    # [batch(readout_depth), height=1, width=n_days, channels=batch] -> [batch(readout_depth), height=1, width=predict_window, channels=batch*n_heads]
+    # [batch(readout_depth), height=1, width=n_days, channels=batch] -> [batch(readout_depth), height=1, width=horizon_window_size, channels=batch*n_heads]
     averaged = tf.nn.depthwise_conv2d_native(inp, attn_filter, [1, 1, 1, 1], 'VALID')
-    # [batch, height=1, width=predict_window, channels=readout_depth*n_neads] -> [batch(depth), predict_window, batch*n_heads]
+    # [batch, height=1, width=horizon_window_size, channels=readout_depth*n_neads] -> [batch(depth), horizon_window_size, batch*n_heads]
     attn_features = tf.squeeze(averaged, 1)
-    # [batch(depth), predict_window, batch*n_heads] -> [batch*n_heads, predict_window, depth]
+    # [batch(depth), horizon_window_size, batch*n_heads] -> [batch*n_heads, horizon_window_size, depth]
     attn_features = tf.transpose(attn_features, [2, 1, 0])
-    # [batch * n_heads, predict_window, depth] -> n_heads * [batch, predict_window, depth]
+    # [batch * n_heads, horizon_window_size, depth] -> n_heads * [batch, horizon_window_size, depth]
     heads = [attn_features[head_no::attn_heads] for head_no in range(attn_heads)]
-    # n_heads * [batch, predict_window, depth] -> [batch, predict_window, depth*n_heads]
+    # n_heads * [batch, horizon_window_size, depth] -> [batch, horizon_window_size, depth*n_heads]
     result = tf.concat(heads, axis=-1)
     # attn_diag = tf.unstack(attns_max, axis=-1)
     return result, None
@@ -215,11 +218,14 @@ def calc_smape_rounded(true, predicted, weights):
     """
     n_valid = tf.reduce_sum(weights)
     true_o = tf.round(tf.expm1(true))
-    pred_o = tf.maximum(tf.round(tf.expm1(predicted)), 0.0)
+    pred_o = tf.maximum(tf.round(tf.expm1(predicted)), 0.0) #!!!!!!! for us we could even clip at 1, since 0 means measurement was missing
     summ = tf.abs(true_o) + tf.abs(pred_o)
     zeros = summ < 0.01
     raw_smape = tf.abs(pred_o - true_o) / summ * 2.0
     smape = tf.where(zeros, tf.zeros_like(summ, dtype=tf.float32), raw_smape)
+    #!!!!!!!!!!! since summ is sum of absolute values of 2 rounded things, is only < .01 if is exactly = 0. For our data, this should NEVER happen, would mean unmeasured NAN, so actually this is exactly the SMAPE we want
+    
+#    smape = tf.Print(smape, ['pred_o',tf.shape(pred_o),pred_o, 'pred_o not round clip',tf.expm1(predicted),  'true_o',tf.shape(true_o),true_o,  'smape', smape, 'raw_smape', raw_smape])  
     return tf.reduce_sum(smape * weights) / n_valid
 
 
@@ -279,10 +285,19 @@ def calc_loss(predictions, true_y, additional_mask=None):#!!!!!quantiles
 
 
 def make_train_op(loss, ema_decay=None, prefix=None):#!!!!!quantiles
-    #optimizer = COCOB()
-    ##train.AdamOptimizer train.GradientDescentOptimizer
-    optimizer = tf.train.AdamOptimizer() #!!!!!try simpler optimizer on our data.
-#    optimizer = tf.train.GradientDescentOptimizer(1e-9) #!!!!!try simpler optimizer on our data.
+#    OPTIMIZER=#'SGDN-HD',#'COCOB',#'ADAM',#'SGDN-HD',#'ADAM-HD'
+#    if OPTIMIZER=='COCOB':
+#        optimizer = COCOB()
+#    if OPTIMIZER=='ADAM':
+#        optimizer = tf.train.AdamOptimizer()
+#    if OPTIMIZER=='SGD':
+#        optimizer = tf.train.GradientDescentOptimizer(1e-9)
+#    if OPTIMIZER=='SGDN-HD':
+#        optimizer = MomentumSGDHDOptimizer()
+#    if OPTIMIZER=='ADAM-HD':
+#        optimizer = AdamHDOptimizer()
+#    optimizer=MomentumSGDHDOptimizer(alpha_0=1e-1)#bad SMAPEs for various orders of magnitude alpha_0
+    optimizer = tf.train.AdamOptimizer()
     
     glob_step = tf.train.get_global_step()
 
@@ -313,7 +328,7 @@ def make_train_op(loss, ema_decay=None, prefix=None):#!!!!!quantiles
     return training_op, glob_norm, ema
 
 
-def convert_cudnn_state_v2(h_state, hparams, seed, c_state=None, dropout=1.0):
+def convert_cudnn_state_v3(h_state, hparams, seed, c_state=None, dropout=1.0):
     """
     Converts RNN state tensor from cuDNN representation to TF RNNCell compatible representation.
     :param h_state: tensor [num_layers, batch_size, depth]
@@ -335,13 +350,23 @@ def convert_cudnn_state_v2(h_state, hparams, seed, c_state=None, dropout=1.0):
     # encoder_layers > decoder_layers: get outputs of upper encoder layers
     # encoder_layers < decoder_layers: feed encoder outputs to lower decoder layers, feed zeros to top layers
     h_layers = tf.unstack(h_state)
+    
+    #Regardless of relative number of layers in encoder vs. decoder, simple approach is 
+    #use topmost encoder layer hidden state as the (fixed) context
+    encoded_representation = wrap_dropout(h_layers[-1])
+    #above uses a different random dropout for the "encoded representaiton" than the actual top level output.
+    #This is possibly a good regularization thing since we dont expect the final hidden state to be  perfect summar/context vector,
+    #so a little randomness is probably good here.
+    #vs. below using topmost level exactly same dropout mask: _[-1]
     if hparams.encoder_rnn_layers >= hparams.decoder_rnn_layers:
-        return squeeze(wrap_dropout(h_layers[hparams.encoder_rnn_layers - hparams.decoder_rnn_layers:]))
+        _ = wrap_dropout(h_layers[hparams.encoder_rnn_layers - hparams.decoder_rnn_layers:])
+        return squeeze(_), _[-1] #Use the topmost hidden state of the encoder as the encoded representaiton
+#        return squeeze(_), encoded_representation #Use the topmost hidden state of the encoder as the encoded representaiton
     else:
         lower_inputs = wrap_dropout(h_layers)
         upper_inputs = [tf.zeros_like(h_layers[0]) for _ in
                         range(hparams.decoder_rnn_layers - hparams.encoder_rnn_layers)]
-        return squeeze(lower_inputs + upper_inputs)
+        return squeeze(lower_inputs + upper_inputs), lower_inputs[-1] #Use the topmost hidden state of the encoder as the encoded representaiton
 
 
 def rnn_stability_loss(rnn_output, beta):
@@ -381,7 +406,7 @@ class Model:
         :param seed:
         :param graph_prefix: Subgraph prefix for multi-model graph
         :param asgd_decay: Decay for SGD averaging
-        :param loss_mask: Additional mask for losses calculation (one value for each prediction day), shape=[predict_window]
+        :param loss_mask: Additional mask for losses calculation (one value for each prediction day), shape=[horizon_window_size]
         """
         self.is_train = is_train
         self.inp = inp
@@ -392,13 +417,15 @@ class Model:
         encoder_output, h_state, c_state = make_encoder(inp.time_x, inp.encoder_features_depth, is_train, hparams, seed,
                                                         transpose_output=False)
         # Encoder activation losses
-        enc_stab_loss = rnn_stability_loss(encoder_output, hparams.encoder_stability_loss / inp.train_window)
-        enc_activation_loss = rnn_activation_loss(encoder_output, hparams.encoder_activation_loss / inp.train_window)
+        enc_stab_loss = rnn_stability_loss(encoder_output, hparams.encoder_stability_loss / inp.history_window_size)
+        enc_activation_loss = rnn_activation_loss(encoder_output, hparams.encoder_activation_loss / inp.history_window_size)
 
         # Convert state from cuDNN representation to TF RNNCell-compatible representation
-        encoder_state = convert_cudnn_state_v2(h_state, hparams, c_state,
+        encoder_state, summary_z = convert_cudnn_state_v3(h_state, hparams, c_state,
                                                dropout=hparams.gate_dropout if is_train else 1.0)
-
+#        encoder_state = tf.Print(encoder_state, ['encoder_state',tf.shape(encoder_state),encoder_state])
+#        summary_z = tf.Print(summary_z, ['summary_z',tf.shape(summary_z),summary_z])
+        
         # Attention calculations
         # Compress encoder outputs
         enc_readout = compressed_readout(encoder_output, hparams,
@@ -416,10 +443,11 @@ class Model:
         print('inp.time_y',inp.time_y)
         decoder_targets, decoder_outputs = self.decoder(encoder_state,
                                                         attn_features if hparams.use_attn else None,
+                                                        summary_z if hparams.RECURSIVE_W_ENCODER_CONTEXT else None,
                                                         inp.time_y, inp.norm_x[:, -1]) #in decoder function def:   inp.time_y = "prediction_inputs";  inp.norm_x[:, -1] = "previous_y" (i.e. the final x normalizd))
         # Decoder activation losses
-        dec_stab_loss = rnn_stability_loss(decoder_outputs, hparams.decoder_stability_loss / inp.predict_window)
-        dec_activation_loss = rnn_activation_loss(decoder_outputs, hparams.decoder_activation_loss / inp.predict_window)
+        dec_stab_loss = rnn_stability_loss(decoder_outputs, hparams.decoder_stability_loss / inp.horizon_window_size)
+        dec_activation_loss = rnn_activation_loss(decoder_outputs, hparams.decoder_activation_loss / inp.horizon_window_size)
 
         # Get final denormalized predictions
         self.predictions = decode_predictions(decoder_targets, inp)
@@ -459,12 +487,12 @@ class Model:
     def default_init(self, seed_add=0):
         return default_init(self.seed + seed_add)
 
-    def decoder(self, encoder_state, attn_features, prediction_inputs, previous_y):
+    def decoder(self, encoder_state, attn_features, summary_z, prediction_inputs, previous_y):
         """
         :param encoder_state: shape [batch_size, encoder_rnn_depth]
         :param prediction_inputs: features for prediction days, tensor[batch_size, time, input_depth]
         :param previous_y: Last day pageviews, shape [batch_size]
-        :param attn_features: Additional features from attention layer, shape [batch, predict_window, readout_depth*n_heads]
+        :param attn_features: Additional features from attention layer, shape [batch, horizon_window_size, readout_depth*n_heads]
         :return: decoder rnn output
         """
         hparams = self.hparams
@@ -479,7 +507,8 @@ class Model:
                 #so maybe do a projection down, on the encoder side first [e.g. encoder output??] then better here...
                 if self.is_train and has_dropout:
                     attn_depth = attn_features.shape[-1].value if attn_features is not None else 0
-                    context_depth = encoder_state.shape[-1].value if self.hparams.RECURSIVE_W_ENCODER_CONTEXT is not None else 0
+                    context_depth = summary_z.shape[-1].value if self.hparams.RECURSIVE_W_ENCODER_CONTEXT is not None else 0 #Should just be the encoder RNN depth
+                    print('attn_depth',attn_depth, 'context_depth',context_depth)
                     input_size = attn_depth + context_depth + prediction_inputs.shape[-1].value + 1 if idx == 0 else self.hparams.rnn_depth
                     input_size = tf.Print(input_size, ['attn_depth',tf.shape(attn_depth),attn_depth, 'context_depth',tf.shape(context_depth),context_depth, 'input_size',tf.shape(input_size),input_size])#!!!!!!!!!!
                     cell = rnn.DropoutWrapper(cell, dtype=tf.float32, input_size=input_size,
@@ -510,7 +539,7 @@ class Model:
 
 
         nest.assert_same_structure(encoder_state, cell.state_size)
-        predict_timesteps = self.inp.predict_window
+        predict_timesteps = self.inp.horizon_window_size
         assert prediction_inputs.shape[1] == predict_timesteps #!!!!!!!quantiles
 
         # [batch_size, time, input_depth] -> [time, batch_size, input_depth]
@@ -541,7 +570,7 @@ class Model:
             # RNN inputs for current step
             features = inputs_by_time[timestep]
 
-            # [batch, predict_window, readout_depth * n_heads] -> [batch, readout_depth * n_heads]
+            # [batch, horizon_window_size, readout_depth * n_heads] -> [batch, readout_depth * n_heads]
             if attn_features is not None:
                 #  [batch_size, 1] + [batch_size, input_depth]
                 attn = attn_features[:, timestep, :]
@@ -553,11 +582,14 @@ class Model:
 
             #If using more of a typical encoder-decoder, also have encoder context each time:
             if self.hparams.RECURSIVE_W_ENCODER_CONTEXT:
-#                encoder_state = tf.Print(next_input,['encoder_state',tf.shape(encoder_state),encoder_state])
-                next_input = tf.concat([next_input, encoder_state], axis=1)
+                next_input = tf.concat([next_input, summary_z], axis=1) #!!!!!!!!summary_z[-1]
+#                if self.hparams.encoder_rnn_layers == 1:
+#                    next_input = tf.concat([next_input, summary_z], axis=1) #!!!!!!!!summary_z[-1]
+#                elif self.hparams.encoder_rnn_layers > 1:
+#                    next_input = tf.concat([next_input, summary_z[-1]], axis=1) #!!!!!!!!summary_z[-1]
 #                next_input = tf.Print(next_input,['next_input',tf.shape(next_input),next_input])
                
-
+                    
             # Run RNN cell
             output, state = cell(next_input, prev_state)
             # Make prediction from RNN outputs

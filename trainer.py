@@ -400,14 +400,14 @@ def train(features_set, sampling_period, name, hparams, multi_gpu=False, n_model
           seed=None, logdir='data/logs', max_epoch=100, patience=2, train_sampling=1.0,
           eval_sampling=1.0, eval_memsize=5, gpu=0, gpu_allow_growth=False, save_best_model=False,
           forward_split=False, write_summaries=False, verbose=False, asgd_decay=None, tqdm=True,
-          side_split=True, max_steps=None, save_from_step=None, do_eval=True, predict_window=63, train_window=283):
+          side_split=True, max_steps=None, save_from_step=None, do_eval=True):#, horizon_window_size=63, history_window_size=283):
 
     eval_k = int(round(26214 * eval_memsize / n_models))
     eval_batch_size = int(
         eval_k / (hparams.rnn_depth * hparams.encoder_rnn_layers))  # 128 -> 1024, 256->512, 512->256
     eval_pct = 0.1
     batch_size = hparams.batch_size
-#    train_window = hparams.train_window
+#    history_window_size = hparams.history_window_size
     tf.reset_default_graph()
     if seed:
         tf.set_random_seed(seed)
@@ -446,7 +446,29 @@ def train(features_set, sampling_period, name, hparams, multi_gpu=False, n_model
     print('eval_every_step', eval_every_step)
 
 
+    def random_draw_history_and_horizon_window_sizes(trainer):
+        """
+        Want to not only have random start end, but also variable size chunks for 
+        history and horizon sizes in TRAINING phase.
+        (in prediction phase, use fixed sizes, and then for different sizes see how performance is.)
+        """
+        history = np.random.randint(low=hparams.history_window_size_minmax[0],high=hparams.history_window_size_minmax[1]+1)
+        horizon = np.random.randint(low=hparams.horizon_window_size_minmax[0],high=hparams.horizon_window_size_minmax[1]+1)        
+        for TT in trainer.trainers:
+            TT.train_model.inp.history_window_size = history
+            TT.train_model.inp.horizon_window_size = horizon
+            TT.train_model.inp.attn_window = history - horizon + 1
+            TT.train_model.inp.max_train_empty = int(round(history * (1 - TT.train_model.inp.train_completeness_threshold)))
+            TT.train_model.inp.max_predict_empty = int(round(horizon * (1 - TT.train_model.inp.predict_completeness_threshold)))
+        return trainer
+
+
+
     def create_model(features_set, sampling_period, scope, index, prefix, seed):
+
+        #Just dummy filler, not important what value
+        history_dummy = 111
+        horizon_dummy = 42
 
         with tf.variable_scope('input') as inp_scope:
             with tf.device("/cpu:0"):
@@ -454,28 +476,28 @@ def train(features_set, sampling_period, name, hparams, multi_gpu=False, n_model
                 pipe = InputPipe(features_set, sampling_period, inp, features=split.train_set, N_time_series=split.train_size,
                                  mode=ModelMode.TRAIN, batch_size=batch_size, n_epoch=None, verbose=verbose,
                                  train_completeness_threshold=train_completeness_threshold,
-                                 predict_completeness_threshold=train_completeness_threshold, train_window=train_window,
-                                 predict_window=predict_window,
+                                 predict_completeness_threshold=train_completeness_threshold, history_window_size=history_dummy,
+                                 horizon_window_size=horizon_dummy,
                                  rand_seed=seed, train_skip_first=hparams.train_skip_first,
-                                 back_offset=predict_window if forward_split else 0)
+                                 back_offset=horizon_dummy if forward_split else 0)
                 inp_scope.reuse_variables()
                 TCT = 0.01
                 if side_split:
                     side_eval_pipe = InputPipe(features_set, sampling_period, inp, features=split.test_set, N_time_series=split.test_size,
                                                mode=ModelMode.EVAL, batch_size=eval_batch_size, n_epoch=None,
-                                               verbose=verbose, predict_window=predict_window,
+                                               verbose=verbose, horizon_window_size=horizon_dummy,
                                                train_completeness_threshold=TCT, predict_completeness_threshold=0,
-                                               train_window=train_window, rand_seed=seed, runs_in_burst=eval_batches,
-                                               back_offset=predict_window * (2 if forward_split else 1))
+                                               history_window_size=history_dummy, rand_seed=seed, runs_in_burst=eval_batches,
+                                               back_offset=horizon_dummy * (2 if forward_split else 1))
                 else:
                     side_eval_pipe = None
                 if forward_split:
-                    forward_eval_pipe = InputPipe(features_set, sampling_period, inp, features=split.test_set, N_time_series=split.test_size,#!!!!!!!!!!!!!!!! page_features
+                    forward_eval_pipe = InputPipe(features_set, sampling_period, inp, features=split.test_set, N_time_series=split.test_size,
                                                   mode=ModelMode.EVAL, batch_size=eval_batch_size, n_epoch=None,
-                                                  verbose=verbose, predict_window=predict_window,
+                                                  verbose=verbose, horizon_window_size=horizon_dummy,
                                                   train_completeness_threshold=TCT, predict_completeness_threshold=0,
-                                                  train_window=train_window, rand_seed=seed, runs_in_burst=eval_batches,
-                                                  back_offset=predict_window)
+                                                  history_window_size=history_dummy, rand_seed=seed, runs_in_burst=eval_batches,
+                                                  back_offset=horizon_dummy)
                 else:
                     forward_eval_pipe = None
         avg_sgd = asgd_decay is not None
@@ -600,8 +622,17 @@ def train(features_set, sampling_period, name, hparams, multi_gpu=False, n_model
                 tqr = range(steps_per_epoch)
 
             for _ in tqr:
+                #!!!!!!!!!! Variable random length train predict windows
+                #Random draw the train, predict window lengths
+                print(_)
+                trainer = random_draw_history_and_horizon_window_sizes(trainer)
+#                print('+++++++++++++++', [(TT.train_model.inp.history_window_size,TT.train_model.inp.horizon_window_size) for TT in trainer.trainers])
+#                print('--------', [(TT.train_model.inp.max_train_empty,TT.train_model.inp.max_predict_empty) for TT in trainer.trainers])
+
                 try:
                     step = trainer.train_step(sess, epoch)
+#                    print('+-+-+-+-+-+-+-', [(TT.train_model.inp.history_window_size,TT.train_model.inp.horizon_window_size) for TT in trainer.trainers])
+#                    print('0000000000000', [(TT.train_model.inp.max_train_empty,TT.train_model.inp.max_predict_empty) for TT in trainer.trainers])                    
                 except tf.errors.OutOfRangeError:
                     break
                     # if beholder:
@@ -672,15 +703,15 @@ def train(features_set, sampling_period, name, hparams, multi_gpu=False, n_model
         return np.mean(best_epoch_smape, dtype=np.float64)
 
 
-def predict(features_set, sampling_period, checkpoints, hparams, return_x=False, verbose=False, predict_window=6, back_offset=0, n_models=1,
-            target_model=0, asgd=False, seed=1, batch_size=1024, train_window=283):
+def predict(features_set, sampling_period, checkpoints, hparams, return_x=False, verbose=False, horizon_window_size=6, back_offset=0, n_models=1,
+            target_model=0, asgd=False, seed=1, batch_size=1024, history_window_size=283): #For predict: allow horizon_window_size to be fixed
     with tf.variable_scope('input') as inp_scope:
         with tf.device("/cpu:0"):
             inp = VarFeeder.read_vars("data/vars")
             pipe = InputPipe(features_set, sampling_period, inp, page_features(inp, features_set), inp.N_time_series, mode=ModelMode.PREDICT, batch_size=batch_size,
                              train_completeness_threshold=0.01,
-                             predict_window=predict_window,
-                             predict_completeness_threshold=0.0, train_window=train_window,#hparams.train_window,
+                             horizon_window_size=horizon_window_size,
+                             predict_completeness_threshold=0.0, history_window_size=history_window_size,#hparams.history_window_size,
                              back_offset=back_offset)
     asgd_decay = 0.99 if asgd else None
     if n_models == 1:
@@ -749,12 +780,12 @@ def predict(features_set, sampling_period, checkpoints, hparams, return_x=False,
     predictions /= len(checkpoints) #Since it is averaging predictions over the chckpoints
     offset = pd.Timedelta(back_offset, 'D') #!!!!!!!!!!!! need to change these lines when sampling WEEKLY MONTHLY
     start_prediction = inp.data_end + pd.Timedelta('1D') - offset
-    end_prediction = start_prediction + pd.Timedelta(predict_window - 1, 'D')
+    end_prediction = start_prediction + pd.Timedelta(horizon_window_size - 1, 'D')
     predictions.columns = pd.date_range(start_prediction, end_prediction)
     if return_x:
         x = pd.concat(x_buffer)
-        #start_data = inp.data_end - pd.Timedelta(hparams.train_window - 1, 'D') - back_offset
-        start_data = inp.data_end - pd.Timedelta(train_window - 1, 'D') - back_offset #!!!!!now for heatmaps
+        #start_data = inp.data_end - pd.Timedelta(hparams.history_window_size - 1, 'D') - back_offset
+        start_data = inp.data_end - pd.Timedelta(history_window_size - 1, 'D') - back_offset #!!!!!now for heatmaps
         end_data = inp.data_end - back_offset
         x.columns = pd.date_range(start_data, end_data)
         return predictions, x
@@ -789,8 +820,8 @@ if __name__ == '__main__':
     parser.add_argument('--no_tqdm', default=True, dest='tqdm', action='store_false', help="Don't use tqdm for status display during training")
     parser.add_argument('--max_steps', type=int, help="Stop training after max steps")
     parser.add_argument('--save_from_step', type=int, help="Save model on each evaluation (10 evals per epoch), starting from this step")
-    parser.add_argument('--predict_window', default=63, type=int, help="Number of days to predict")
-    parser.add_argument('--train_window', default=283, type=int, help="Train window chunk size")#Now that we want to do train size - val size performance heatmaps
+#    parser.add_argument('--horizon_window_size', default=63, type=int, help="Number of days to predict")
+#    parser.add_argument('--history_window_size', default=283, type=int, help="Train window chunk size")#Now that we want to do train size - val size performance heatmaps
     args = parser.parse_args()
 
     param_dict = dict(vars(args))
@@ -801,7 +832,7 @@ if __name__ == '__main__':
     # hparams = build_hparams()
     # result = train("definc_attn", hparams, n_models=1, train_sampling=1.0, eval_sampling=1.0, patience=5, multi_gpu=True,
     #                save_best_model=False, gpu=0, eval_memsize=15, seed=5, verbose=True, forward_split=False,
-    #                write_summaries=True, side_split=True, do_eval=False, predict_window=63, asgd_decay=None, max_steps=11500,
+    #                write_summaries=True, side_split=True, do_eval=False, horizon_window_size=63, asgd_decay=None, max_steps=11500,
     #                save_from_step=10500)
 
     # print("Training result:", result)

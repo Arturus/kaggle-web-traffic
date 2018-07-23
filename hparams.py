@@ -46,7 +46,14 @@ params_s32 = dict(
     #connections from encoded representation to each decoder time step (only to 1st
     #decoder timestep). Set below to True to use encoder-decoder; set False to use
     #Kaggle architecture not really true encoder-decoder
-    RECURSIVE_W_ENCODER_CONTEXT=True, 
+    RECURSIVE_W_ENCODER_CONTEXT=True,
+    
+    #Instead of fixed size windows, do training phase over range of window sizes
+    #drawn uniformly from [a,b]. Another form of randomization/regularization, 
+    #but more importantly this way model can generalize to different lengths so
+    #we can more fairly assess performance over range of history/horizon windows:
+    history_window_size_minmax=[7,365],
+    horizon_window_size_minmax=[7,60],
 )
 
 

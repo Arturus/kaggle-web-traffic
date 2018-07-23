@@ -265,6 +265,61 @@ def normalize(values: np.ndarray):
     return (values - values.mean()) / np.std(values)
 
 
+
+
+
+
+
+def encode_fixed_date_holidays__daily(dates_series):
+    """
+    Encode holidays and shoulder days, for holidays that occur yearly on fixed
+    dates.
+    For daily sampled data only.
+    
+    In USA:
+    Christmas, New Year, 4th of July, Halloween, Cinco de Mayo
+    Valentine's Day, Veteran's Day
+    
+    other international:
+        ...
+    """
+    return dates_series
+
+
+# =============================================================================
+# MOVING holidays [variable date]
+# =============================================================================
+def encode_thanksgiving__daily(dates_series):
+    """
+    Encode Thanksgiving holiday and shoulder days.
+    For daily sampled data only.
+    """
+#    4th Thurs of Novmber...
+#    if (month==11) and (dayofweek=='Thurs') and (22<=dayofmonth<=28)
+    return dates_series
+
+def encode_easter__daily(dates_series):
+    """
+    Encode Easter holiday and shoulder days.
+    For daily sampled data only.
+    """
+    return dates_series    
+
+#Labor Day, Memorial Day, President's Day, MLK Day, Columbus Day, Tax Day
+    
+def encode_custom_dates__daily(dates_series,dates_list):
+    """
+    Encode custom days and optionally shoulder days.
+    For daily sampled data only.
+    
+    E.g. Superbowl Sunday
+    suberbowl_dates = ['2014-2-2','2015-2-1','2016-2-7','2017-2-5','2018-2-4','2019-2-3']
+    shoulders = [...]
+    """
+    return dates_series        
+    
+
+
 def run():
     parser = argparse.ArgumentParser(description='Prepare data')
     parser.add_argument('data_dir')

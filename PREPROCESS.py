@@ -318,7 +318,7 @@ def imputation_lagKmedian_single_series(df,seasonality,N_seasons,out_of_range_fi
 
 
 
-def data_augmentation(df, jitter_pcts_list=[.05,.10,.15], do_low_pass_filter=True, additive_trend=False):
+def data_augmentation(df, jitter_pcts_list=[.05,.01], do_low_pass_filter=True, additive_trend=False):
     """
     Do some basic data augmentation with a few different options.
     Then output Cartesian product of all these variations as the final set.
@@ -332,6 +332,9 @@ def data_augmentation(df, jitter_pcts_list=[.05,.10,.15], do_low_pass_filter=Tru
         percent of the observed value. Either positive or negative.
         If the count is small, then just leave it, otherwise perturb
         (always leaving counts positive).
+        
+        Just do at most 1 or 2 percent jitter to not corrupt to much,
+        ~ magnitude of measurement noise.
         """
         page = df['Page'].values[0]
         cols = df.columns

@@ -79,7 +79,7 @@ paths = [p for p in tf.train.get_checkpoint_state(f'data/cpt/{PARAM_SETTING}').a
 t_preds = []
 for tm in range(Nmodels):
     tf.reset_default_graph()
-    t_preds.append(predict(FEATURES_SET, SAMPLING_PERIOD, paths, build_hparams(PARAM_SETTING_FULL_NAME), back_offset=0, predict_window=63,
+    t_preds.append(predict(FEATURES_SET, SAMPLING_PERIOD, paths, build_hparams(PARAM_SETTING_FULL_NAME), back_offset=0, history_window_size=283, horizon_window_size=63,
                     n_models=Nmodels, target_model=tm, seed=2, batch_size=2048, asgd=True))
 
 

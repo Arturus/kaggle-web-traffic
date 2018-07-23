@@ -59,17 +59,22 @@ rm *.pkl
 cd ..
 ll data/
 
-python3 make_features.py data/vars ours daily full --add_days=63
-python3 make_features.py data/vars kaggle daily full --add_days=63
+python3 make_features.py data/vars ours daily full --add_days=50
+#python3 make_features.py data/vars kaggle daily full --add_days=63
+
+python3 trainer.py full daily --name s32 --hparam_set=s32 --n_models=3 --asgd_decay=0.99 --max_steps=11500 --save_from_step=10000 --patience=5 --horizon_window_size=50 --history_window_size=100 --max_epoch=10
 
 
 
 
+
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------
 
 #no reason to expect 10000 to 11500 is good range to save out. View loss along the way
 python3 trainer.py arturius daily --name s32 --hparam_set=s32 --n_models=3 --asgd_decay=0.99 --max_steps=11500 --save_from_step=10000
-python3 trainer.py full daily --name s32 --hparam_set=s32 --n_models=3 --asgd_decay=0.99 --max_steps=11500 --save_from_step=10000 --patience=10 --predict_window=50
-python3 trainer.py full daily --name TEST_attn_head --hparam_set=TEST_attn_head --n_models=3 --asgd_decay=0.99 --max_steps=11500 --save_from_step=10000 --patience=10 --predict_window=50
+python3 trainer.py full daily --name s32 --hparam_set=s32 --n_models=3 --asgd_decay=0.99 --max_steps=11500 --save_from_step=10000 --patience=10 --horizon_window_size=50
+python3 trainer.py full daily --name TEST_attn_head --hparam_set=TEST_attn_head --n_models=3 --asgd_decay=0.99 --max_steps=11500 --save_from_step=10000 --patience=10 --horizon_window_size=50
 --name TEST_stacked --hparam_set=TEST_stacked
 
 --no_eval
@@ -79,7 +84,10 @@ python3 trainer.py full daily --name TEST_attn_head --hparam_set=TEST_attn_head 
 --verbose
 
 
-python3 trainer.py full daily --name s32 --hparam_set=s32 --n_models=3 --asgd_decay=0.99 --max_steps=11500 --save_from_step=10000 --patience=10 --predict_window=50 --train_window=100
+python3 trainer.py full daily --name wEncDec --hparam_set=s32 --n_models=3 --asgd_decay=0.99 --max_steps=11500 --save_from_step=10000 --patience=10 --horizon_window_size=63 --history_window_size=100 --max_epoch=10
+
+python3 trainer.py full daily --name noEncDec --hparam_set=s32 --n_models=3 --asgd_decay=0.99 --max_steps=11500 --save_from_step=10000 --patience=10 --horizon_window_size=63 --history_window_size=100 --max_epoch=10
+
 
 python3 trainer.py full daily --name s32 --hparam_set=s32 --n_models=3 --asgd_decay=0.99 --max_steps=11500 --save_from_step=10 --max_epoch=1000 --patience=50 --verbose --side_split
 

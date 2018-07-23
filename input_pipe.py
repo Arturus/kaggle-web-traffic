@@ -134,10 +134,11 @@ class InputPipe:
         :return: tuple (train_counts, test_counts, lagged_counts, [dow,woy,moy,year])
         """
         # Pad counts to ensure we have enough array length for prediction
-        counts = tf.concat([counts, tf.fill([self.predict_window], np.NaN)], axis=0)
+        counts = tf.concat([counts, tf.fill([self.horizon_window_size], np.NaN)], axis=0)
         cropped_count = counts[start:end]
-
-
+#        cropped_count = tf.Print(cropped_count,['INPUT PIPE > CUT > cropped_count',tf.shape(cropped_count), 'start', start, 'end', end])
+#        cropped_count = tf.Print(cropped_count,['self.history_window_size', self.history_window_size, 'self.horizon_window_size', self.horizon_window_size])
+        
         # =============================================================================
         # Ordinal periodic variables
         # which features are here depends on what the sampling period is for the data
@@ -185,7 +186,7 @@ class InputPipe:
 
         #Will always have the count series (the series we predict on):
         # Split for train and test
-        x_counts, y_counts = tf.split(cropped_count, [self.train_window, self.predict_window], axis=0)
+        x_counts, y_counts = tf.split(cropped_count, [self.history_window_size, self.horizon_window_size], axis=0)
 
         # Convert NaN to zero in for train data
         x_counts = tf.where(tf.is_nan(x_counts), tf.zeros_like(x_counts), x_counts)
@@ -214,17 +215,17 @@ class InputPipe:
         :param args: pass-through data, will be appended to result
         :return: result of cut() + args
         """
-        n_timesteps = self.predict_window + self.train_window
+        n_timesteps = self.horizon_window_size + self.history_window_size
         # How much free space we have to choose starting day
         free_space = self.inp.data_days - n_timesteps - self.back_offset - self.start_offset
         if self.verbose:
             #!!!!!! doesn't really matter since this is just printout, but would need to change for WEEKLY / MONTHLY
             lower_train_start = self.inp.data_start + pd.Timedelta(self.start_offset, 'D')
             lower_test_end = lower_train_start + pd.Timedelta(n_timesteps, 'D')
-            lower_test_start = lower_test_end - pd.Timedelta(self.predict_window, 'D')
+            lower_test_start = lower_test_end - pd.Timedelta(self.horizon_window_size, 'D')
             upper_train_start = self.inp.data_start + pd.Timedelta(free_space - 1, 'D')
             upper_test_end = upper_train_start + pd.Timedelta(n_timesteps, 'D')
-            upper_test_start = upper_test_end - pd.Timedelta(self.predict_window, 'D')
+            upper_test_start = upper_test_end - pd.Timedelta(self.horizon_window_size, 'D')
             print(f"Free space for training: {free_space} days.")
             print(f" Lower train {lower_train_start}, prediction {lower_test_start}..{lower_test_end}")
             print(f" Upper train {upper_train_start}, prediction {upper_test_start}..{upper_test_end}")
@@ -238,12 +239,12 @@ class InputPipe:
     def cut_eval(self, counts, *args):
         """
         Cuts segment of time series for evaluation.
-        Always cuts train_window + predict_window length segment beginning at start_offset point
+        Always cuts history_window_size + horizon_window_size length segment beginning at start_offset point
         :param counts: counts timeseries
         :param args: pass-through data, will be appended to result
         :return: result of cut() + args
         """
-        end = self.start_offset + self.train_window + self.predict_window
+        end = self.start_offset + self.history_window_size + self.horizon_window_size
         return self.cut(counts, self.start_offset, end) + args
 
     def reject_filter(self, x_counts, y_counts, *args):
@@ -297,15 +298,15 @@ class InputPipe:
         # Do train - predict splits
         # =============================================================================
         if self.sampling_period == 'daily':
-            x_dow, y_dow = tf.split(dow, [self.train_window, self.predict_window], axis=0)
-            x_woy, y_woy = tf.split(woy, [self.train_window, self.predict_window], axis=0) #need to see how to fit in woy into inputs to this func
+            x_dow, y_dow = tf.split(dow, [self.history_window_size, self.horizon_window_size], axis=0)
+            x_woy, y_woy = tf.split(woy, [self.history_window_size, self.horizon_window_size], axis=0) #need to see how to fit in woy into inputs to this func
         elif self.sampling_period == 'weekly':
-            x_woy, y_woy = tf.split(woy, [self.train_window, self.predict_window], axis=0)
+            x_woy, y_woy = tf.split(woy, [self.history_window_size, self.horizon_window_size], axis=0)
         elif self.sampling_period == 'monthly':
-            x_moy, y_moy = tf.split(moy, [self.train_window, self.predict_window], axis=0)
+            x_moy, y_moy = tf.split(moy, [self.history_window_size, self.horizon_window_size], axis=0)
 
         #Already did a manual kind of scaling for year in make_features.py so don't need to normalize here...
-        x_year, y_year = tf.split(year, [self.train_window, self.predict_window], axis=0)
+        x_year, y_year = tf.split(year, [self.history_window_size, self.horizon_window_size], axis=0)
         x_year = tf.expand_dims(x_year,axis=1)
         y_year = tf.expand_dims(y_year,axis=1)
 
@@ -317,7 +318,7 @@ class InputPipe:
         norm_lagged_counts = (lagged_counts - mean) / std
 
         # Split lagged counts to train and test
-        x_lagged, y_lagged = tf.split(norm_lagged_counts, [self.train_window, self.predict_window], axis=0)
+        x_lagged, y_lagged = tf.split(norm_lagged_counts, [self.history_window_size, self.horizon_window_size], axis=0)
 
 
         # Combine all page features into single tensor
@@ -363,7 +364,7 @@ class InputPipe:
         x_features = tf.concat([x_features, x_lagged,
                                 # Stretch series_features to all training days
                                 # [1, features] -> [n_timesteps, features]
-                                tf.tile(series_features, [self.train_window, 1])], axis=1)
+                                tf.tile(series_features, [self.history_window_size, 1])], axis=1)
 
         # Test features
         if self.sampling_period == 'daily':
@@ -376,7 +377,7 @@ class InputPipe:
         y_features = tf.concat([y_features, y_lagged,
                                 # Stretch series_features to all testing days
                                 # [1, features] -> [n_timesteps, features]
-                                tf.tile(series_features, [self.predict_window, 1])
+                                tf.tile(series_features, [self.horizon_window_size, 1])
                                 ], axis=1)
 
 #        print(x_features)
@@ -386,13 +387,14 @@ class InputPipe:
         
         print('x_features')
         print(x_features)
+        print(x_features.shape)
         return x_counts, x_features, norm_x_counts, x_lagged, y_counts, y_features, norm_y_counts, mean, std, flat_features, page_ix
         #Must match up with setting self.XYZ = it_tensors below in __init__. 
 
 
 
     def __init__(self, features_set, sampling_period, inp: VarFeeder, features: Iterable[tf.Tensor], N_time_series: int, mode: ModelMode, n_epoch=None,
-                 batch_size=127, runs_in_burst=1, verbose=True, predict_window=60, train_window=500,
+                 batch_size=127, runs_in_burst=1, verbose=True, horizon_window_size=60, history_window_size=500,
                  train_completeness_threshold=1, predict_completeness_threshold=1, back_offset=0,
                  train_skip_first=0, rand_seed=None):
         """
@@ -407,8 +409,8 @@ class InputPipe:
         :param batch_size:
         :param runs_in_burst: How many batches can be consumed at short time interval (burst). Multiplicator for prefetch()
         :param verbose: Print additional information during graph construction
-        :param predict_window: Number of days to predict
-        :param train_window: Use train_window days for traning
+        :param horizon_window_size: Number of days to predict
+        :param history_window_size: Use history_window_size days for traning
         :param train_completeness_threshold: Percent of zero datapoints allowed in train timeseries.
         :param predict_completeness_threshold: Percent of zero datapoints allowed in test/predict timeseries.
         :param back_offset: Don't use back_offset days at the end of timeseries
@@ -430,32 +432,35 @@ class InputPipe:
             mode, inp.data_days, inp.data_start, inp.data_end, inp.features_end))
 
         if mode == ModelMode.TRAIN:
-            # reserve predict_window at the end for validation
-            assert inp.data_days - predict_window > predict_window + train_window, \
+            # reserve horizon_window_size at the end for validation
+            assert inp.data_days - horizon_window_size > horizon_window_size + history_window_size, \
                 "Predict+train window length (+predict window for validation) is larger than total number of days in dataset"
             self.start_offset = train_skip_first
         elif mode == ModelMode.EVAL or mode == ModelMode.PREDICT:
-            self.start_offset = inp.data_days - train_window - back_offset
+            self.start_offset = inp.data_days - history_window_size - back_offset
             if verbose:
                 train_start = inp.data_start + pd.Timedelta(self.start_offset, 'D')
-                eval_start = train_start + pd.Timedelta(train_window, 'D')
-                end = eval_start + pd.Timedelta(predict_window - 1, 'D')
+                eval_start = train_start + pd.Timedelta(history_window_size, 'D')
+                end = eval_start + pd.Timedelta(horizon_window_size - 1, 'D')
                 print("Train start %s, predict start %s, end %s" % (train_start, eval_start, end))
             assert self.start_offset >= 0
 
-        self.train_window = train_window
-        self.predict_window = predict_window
-        self.attn_window = train_window - predict_window + 1
-        self.max_train_empty = int(round(train_window * (1 - train_completeness_threshold)))
-        self.max_predict_empty = int(round(predict_window * (1 - predict_completeness_threshold)))
+        self.history_window_size = history_window_size #!!!!!!!!!!!random resize
+        self.horizon_window_size = horizon_window_size#!!!!!!!!!!!random resize
+        self.attn_window = history_window_size - horizon_window_size + 1#!!!!!!!!!!!random resize
+        self.max_train_empty = int(round(history_window_size * (1 - train_completeness_threshold)))#!!!!!!!!!!!random resize
+        self.max_predict_empty = int(round(horizon_window_size * (1 - predict_completeness_threshold)))#!!!!!!!!!!!random resize
         self.mode = mode
         self.verbose = verbose
+        
+        self.train_completeness_threshold = train_completeness_threshold
+        self.predict_completeness_threshold = predict_completeness_threshold
 
 
         print('max_train_empty',self.max_train_empty)
         print('max_predict_empty',self.max_predict_empty)
-        print('train_window',self.train_window)
-        print('predict_window',self.predict_window)
+        print('history_window_size',self.history_window_size)
+        print('horizon_window_size',self.horizon_window_size)
         print('attn_window',self.attn_window)
 
         
@@ -465,14 +470,29 @@ class InputPipe:
         # Choose right cutter function for current ModelMode
         cutter = {ModelMode.TRAIN: self.cut_train, ModelMode.EVAL: self.cut_eval, ModelMode.PREDICT: self.cut_eval}
         # Create dataset, transform features and assemble batches
+        #features is a list of tensors (one tensor per feature: counts, page_ix, ..., count_variance)
+        print('features',features)
+#        features = tf.Print(features,['features',tf.shape(features),features])
         root_ds = tf.data.Dataset.from_tensor_slices(tuple(features)).repeat(n_epoch)
-        batch = (root_ds
-                 .map(cutter[mode])
-                 .filter(self.reject_filter)
-                 .map(self.make_features, num_parallel_calls=num_threads)
-                 .batch(batch_size)
-                 .prefetch(runs_in_burst * 2)
-                 )
+#        print(root_ds.output_classes, root_ds.output_shapes, root_ds.output_types,)
+        print(root_ds.output_shapes)
+#        batch = (root_ds
+#                 .map(cutter[mode])
+#                 .filter(self.reject_filter)
+#                 .map(self.make_features, num_parallel_calls=num_threads)
+#                 .batch(batch_size)
+#                 .prefetch(runs_in_burst * 2)
+#                 )
+        batch = root_ds.map(cutter[mode]).filter(self.reject_filter).map(self.make_features, num_parallel_calls=num_threads)
+        print('batch MFM', batch)
+        
+        batch = batch.batch(batch_size)
+        print('batch B', batch)
+         
+        batch = batch.prefetch(runs_in_burst * 2)
+        print('batch P', batch)
+        batch = (batch)
+        
         print('---------------- Done batching ----------------')
         print(batch)
         self.iterator = batch.make_initializable_iterator()
