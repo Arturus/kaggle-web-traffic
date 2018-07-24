@@ -464,6 +464,17 @@ class InputPipe:
         print('attn_window',self.attn_window)
 
         
+        def random_draw_new_window_sizes():
+            history = np.random.randint(low=7,high=120+1)
+            horizon = np.random.randint(low=7,high=60+1)        
+            self.history_window_size = history
+            self.horizon_window_size = horizon
+            self.attn_window = history - horizon + 1
+            self.max_train_empty = int(round(history * (1 - self.train_completeness_threshold)))
+            self.max_predict_empty = int(round(horizon * (1 - self.predict_completeness_threshold)))
+    
+    
+        
         # Reserve more processing threads for eval/predict because of larger batches
         num_threads = 3 if mode == ModelMode.TRAIN else 6
 
@@ -472,26 +483,47 @@ class InputPipe:
         # Create dataset, transform features and assemble batches
         #features is a list of tensors (one tensor per feature: counts, page_ix, ..., count_variance)
         print('features',features)
-#        features = tf.Print(features,['features',tf.shape(features),features])
-        root_ds = tf.data.Dataset.from_tensor_slices(tuple(features)).repeat(n_epoch)
-#        print(root_ds.output_classes, root_ds.output_shapes, root_ds.output_types,)
-        print(root_ds.output_shapes)
-#        batch = (root_ds
-#                 .map(cutter[mode])
-#                 .filter(self.reject_filter)
-#                 .map(self.make_features, num_parallel_calls=num_threads)
-#                 .batch(batch_size)
-#                 .prefetch(runs_in_burst * 2)
-#                 )
-        batch = root_ds.map(cutter[mode]).filter(self.reject_filter).map(self.make_features, num_parallel_calls=num_threads)
-        print('batch MFM', batch)
+    
+    
+#        for _ in range(max(n_epoch,20)):
+##            random_draw_new_window_sizes()
+#            print('max_train_empty',self.max_train_empty)
+#            print('max_predict_empty',self.max_predict_empty)
+#            print('history_window_size',self.history_window_size)
+#            print('horizon_window_size',self.horizon_window_size)
+#            print('attn_window',self.attn_window)            
+#            
+#            root_ds = tf.data.Dataset.from_tensor_slices(tuple(features)).repeat(n_epoch)
+#    #        print(root_ds.output_classes, root_ds.output_shapes, root_ds.output_types,)
+#            print('root_ds.output_shapes',root_ds.output_shapes)
+#            print('root_ds.output_types',root_ds.output_types)
+#    #        batch = (root_ds
+#    #                 .map(cutter[mode])
+#    #                 .filter(self.reject_filter)
+#    #                 .map(self.make_features, num_parallel_calls=num_threads)
+#    #                 .batch(batch_size)
+#    #                 .prefetch(runs_in_burst * 2)
+#    #                 )
+#            
+#            #TEST:change horisoron jiostory
+#            batch = root_ds.map(cutter[mode]).filter(self.reject_filter).map(self.make_features, num_parallel_calls=num_threads)
+#            print('batch MFM', batch)
+#            
+#            batch = batch.batch(batch_size)
+#            print('batch B', batch)
+#             
+#            batch = batch.prefetch(runs_in_burst * 2)
+#            print('batch P', batch)
+#            batch = (batch)
         
-        batch = batch.batch(batch_size)
-        print('batch B', batch)
-         
-        batch = batch.prefetch(runs_in_burst * 2)
-        print('batch P', batch)
-        batch = (batch)
+        root_ds = tf.data.Dataset.from_tensor_slices(tuple(features)).repeat(n_epoch)
+        batch = (root_ds
+                 .map(cutter[mode])
+                 .filter(self.reject_filter)
+                 .map(self.make_features, num_parallel_calls=num_threads)
+                 .batch(batch_size)
+                 .prefetch(runs_in_burst * 2)
+                 )        
         
         print('---------------- Done batching ----------------')
         print(batch)
@@ -504,6 +536,7 @@ class InputPipe:
         #But if not doing lagged then can return None for that ???
         self.true_x, self.time_x, self.norm_x, self.lagged_x, self.true_y, self.time_y, self.norm_y, self.norm_mean, \
         self.norm_std, self.series_features, self.page_ix = it_tensors #!!!!!!!!!!!!! names hardcoded ned to change to my fgeatures
+        print(self.true_x)
         """if self.features_set=='simple':
             pass
 #        if self.features_set=='full':
@@ -513,6 +546,7 @@ class InputPipe:
 
         self.encoder_features_depth = self.time_x.shape[2].value
         print('self.encoder_features_depth',self.encoder_features_depth)
+        print('self.time_x.shape',self.time_x.shape)
         
     def load_vars(self, session):
         self.inp.restore(session)

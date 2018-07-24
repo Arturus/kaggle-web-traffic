@@ -270,7 +270,10 @@ def normalize(values: np.ndarray):
 
 
 
-def encode_fixed_date_holidays__daily(dates_series):
+
+
+
+def get_fixed_date_holidays__daily(dates_series, month_day):
     """
     Encode holidays and shoulder days, for holidays that occur yearly on fixed
     dates.
@@ -289,23 +292,25 @@ def encode_fixed_date_holidays__daily(dates_series):
 # =============================================================================
 # MOVING holidays [variable date]
 # =============================================================================
-def encode_thanksgiving__daily(dates_series):
+def get_thanksgivings__daily(dates_series):
     """
-    Encode Thanksgiving holiday and shoulder days.
-    For daily sampled data only.
+    Get Thanksgiving holiday dates within the few years time range
     """
 #    4th Thurs of Novmber...
 #    if (month==11) and (dayofweek=='Thurs') and (22<=dayofmonth<=28)
-    return dates_series
+    thanksgiving_dates = []
+    #...
+    return thanksgiving_dates
 
-def encode_easter__daily(dates_series):
+def get_Easters__daily(dates_series):
     """
-    Encode Easter holiday and shoulder days.
-    For daily sampled data only.
+    Get Easter holiday dates within the few years time range
     """
-    return dates_series    
+    easter_dates = []
+    #...
+    return easter_dates  
 
-#Labor Day, Memorial Day, President's Day, MLK Day, Columbus Day, Tax Day
+
     
 def encode_custom_dates__daily(dates_series,dates_list):
     """
@@ -318,6 +323,78 @@ def encode_custom_dates__daily(dates_series,dates_list):
     """
     return dates_series        
     
+
+def encode_all_holidays__daily(dates_series):
+    """
+    Encode all fixed and moving holidays, and corresponding holiday shoulders.
+    Intended for daily sampled data only.
+    """
+    
+    def spiral_encoding(dates_series, holiday_date, shoulder):
+        """
+        Encode holiday and shoulders as a spiral:
+        Rotation over 2pi, with radius goes from 0 to 1 [on holiday] back to 0
+        """
+        Ndays = len(dates_series)
+        r = np.zeros(Ndays)
+        r[holiday_date] = 1.
+        r[holiday_date-shoulder:holiday_date] = np.linspace(0., 1., shoulder) #!!!!!!!
+        r[holiday_date+1:holiday_date+shoulder+1] = np.linspace(1., 0., shoulder)#!!!!!!!
+        theta = np.zeros(Ndays)
+        theta[holiday_date-shoulder:holiday_date+shoulder+1] = (np.pi/(2.*shoulder + 1))*np.linspace(0., 1., 2*shoulder+1) #!!!!!!!
+        holiday_encoding = np.vstack((r*np.cos(theta), r*np.sin(theta)))
+        return holiday_encoding
+    
+    Ndays = len(dates_series)
+    
+    #Fixed Holidays [add other international ones as needed]:
+    xmas_dates = get_fixed_date_holidays__daily(dates_series, '12-25')
+    new_years_dates = get_fixed_date_holidays__daily(dates_series, '01-01')
+    july4_dates = get_fixed_date_holidays__daily(dates_series, '07-04')
+    halloween_dates = get_fixed_date_holidays__daily(dates_series, '10-31')
+    cincodemayo_dates = get_fixed_date_holidays__daily(dates_series, '05-05')
+    valentines_dates = get_fixed_date_holidays__daily(dates_series, '02-14')
+    veterans_dates = get_fixed_date_holidays__daily(dates_series, '11-11')
+    #taxday_dates = get_fixed_date_holidays__daily(dates_series, '04-15')
+    
+
+    #Rule Based Moving Holidays
+    thanksgiving_dates = get_thanksgivings__daily(dates_series)
+    easter_dates = get_Easters__daily(dates_series)
+    #... Labor Day, Memorial Day, President's Day, MLK Day, Columbus Day, Tax Day
+    #Custom / Single Event moving Holidays
+    suberbowl_dates = ['2014-2-2','2015-2-1','2016-2-7','2017-2-5','2018-2-4','2019-2-3']
+
+    #Dict of holiday dates: shoulder halfwidth  [-S, -S+1, ..., holiday, holiday+1, ..., holiday+S]
+    #for now just use 3 as the shoulder width for all "major" holidays, 0 or 1 for "minor" holidays
+    #Use ODD numbers for shoulder sizes
+    holidays = {xmas_dates:3,
+                new_years_dates:3,
+                july4_dates:1,
+                halloween_dates:1,
+                cincodemayo_dates:1,
+                valentines_dates:1,
+                veterans_dates:1,
+                
+                thanksgiving_dates:3,
+                easter_dates:1,
+                
+                suberbowl_dates:1,
+                }
+    
+    #Assume additive holiday effects: (which should almost never matter anyway 
+    #for small shoulders unless there is overlap beteen some holidays. E.g. with shoulder=3, 
+    #Christmas and New Year's do NOT overlap.)
+    _ = np.zeros((2,Ndays))
+    encoded_holidays = pd.DataFrame(_,index=date_series)
+    #Iterate through each holiday, accumulating the effect:
+    for hd, shoulder in holidays.items():
+        #Since date series is potentially over few years, could have e.g. several Christmas furing that time range
+        for holiday_date in hd:
+            holiday_encoding = spiral_encoding(dates_series, holiday_date, shoulder)
+            xxxxx += holiday_encoding
+    return encoded_holidays
+
 
 
 def run():

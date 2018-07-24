@@ -430,11 +430,13 @@ class Model:
         # Compress encoder outputs
         enc_readout = compressed_readout(encoder_output, hparams,
                                          dropout=hparams.encoder_readout_dropout if is_train else 1.0, seed=seed)
+        
         # Calculate fingerprint from input features
-        fingerprint_inp = tf.concat([inp.lagged_x, tf.expand_dims(inp.norm_x, -1)], axis=-1)
-        fingerprint = make_fingerprint(fingerprint_inp, is_train, hparams.fingerprint_fc_dropout, seed)
-        # Calculate attention vector
-        attn_features, attn_weights = attn_readout_v3(enc_readout, inp.attn_window, hparams.attention_heads,
+        if hparams.use_attn:
+            fingerprint_inp = tf.concat([inp.lagged_x, tf.expand_dims(inp.norm_x, -1)], axis=-1)
+            fingerprint = make_fingerprint(fingerprint_inp, is_train, hparams.fingerprint_fc_dropout, seed)
+            # Calculate attention vector
+            attn_features, attn_weights = attn_readout_v3(enc_readout, inp.attn_window, hparams.attention_heads,
                                                       fingerprint, seed=seed)
 
         # Run decoder
