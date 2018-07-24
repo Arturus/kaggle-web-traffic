@@ -9,6 +9,8 @@ from feeder import VarFeeder
 import numba
 from typing import Tuple, Dict, Collection, List
 
+from holiday_features import encode_all_holidays__daily
+
 
 def read_cached(name) -> pd.DataFrame:
     """
@@ -270,133 +272,6 @@ def normalize(values: np.ndarray):
 
 
 
-
-
-
-def get_fixed_date_holidays__daily(dates_series, month_day):
-    """
-    Encode holidays and shoulder days, for holidays that occur yearly on fixed
-    dates.
-    For daily sampled data only.
-    
-    In USA:
-    Christmas, New Year, 4th of July, Halloween, Cinco de Mayo
-    Valentine's Day, Veteran's Day
-    
-    other international:
-        ...
-    """
-    return dates_series
-
-
-# =============================================================================
-# MOVING holidays [variable date]
-# =============================================================================
-def get_thanksgivings__daily(dates_series):
-    """
-    Get Thanksgiving holiday dates within the few years time range
-    """
-#    4th Thurs of Novmber...
-#    if (month==11) and (dayofweek=='Thurs') and (22<=dayofmonth<=28)
-    thanksgiving_dates = []
-    #...
-    return thanksgiving_dates
-
-def get_Easters__daily(dates_series):
-    """
-    Get Easter holiday dates within the few years time range
-    """
-    easter_dates = []
-    #...
-    return easter_dates  
-
-
-    
-def encode_custom_dates__daily(dates_series,dates_list):
-    """
-    Encode custom days and optionally shoulder days.
-    For daily sampled data only.
-    
-    E.g. Superbowl Sunday
-    suberbowl_dates = ['2014-2-2','2015-2-1','2016-2-7','2017-2-5','2018-2-4','2019-2-3']
-    shoulders = [...]
-    """
-    return dates_series        
-    
-
-def encode_all_holidays__daily(dates_series):
-    """
-    Encode all fixed and moving holidays, and corresponding holiday shoulders.
-    Intended for daily sampled data only.
-    """
-    
-    def spiral_encoding(dates_series, holiday_date, shoulder):
-        """
-        Encode holiday and shoulders as a spiral:
-        Rotation over 2pi, with radius goes from 0 to 1 [on holiday] back to 0
-        """
-        Ndays = len(dates_series)
-        r = np.zeros(Ndays)
-        r[holiday_date] = 1.
-        r[holiday_date-shoulder:holiday_date] = np.linspace(0., 1., shoulder) #!!!!!!!
-        r[holiday_date+1:holiday_date+shoulder+1] = np.linspace(1., 0., shoulder)#!!!!!!!
-        theta = np.zeros(Ndays)
-        theta[holiday_date-shoulder:holiday_date+shoulder+1] = (np.pi/(2.*shoulder + 1))*np.linspace(0., 1., 2*shoulder+1) #!!!!!!!
-        holiday_encoding = np.vstack((r*np.cos(theta), r*np.sin(theta)))
-        return holiday_encoding
-    
-    Ndays = len(dates_series)
-    
-    #Fixed Holidays [add other international ones as needed]:
-    xmas_dates = get_fixed_date_holidays__daily(dates_series, '12-25')
-    new_years_dates = get_fixed_date_holidays__daily(dates_series, '01-01')
-    july4_dates = get_fixed_date_holidays__daily(dates_series, '07-04')
-    halloween_dates = get_fixed_date_holidays__daily(dates_series, '10-31')
-    cincodemayo_dates = get_fixed_date_holidays__daily(dates_series, '05-05')
-    valentines_dates = get_fixed_date_holidays__daily(dates_series, '02-14')
-    veterans_dates = get_fixed_date_holidays__daily(dates_series, '11-11')
-    #taxday_dates = get_fixed_date_holidays__daily(dates_series, '04-15')
-    
-
-    #Rule Based Moving Holidays
-    thanksgiving_dates = get_thanksgivings__daily(dates_series)
-    easter_dates = get_Easters__daily(dates_series)
-    #... Labor Day, Memorial Day, President's Day, MLK Day, Columbus Day, Tax Day
-    #Custom / Single Event moving Holidays
-    suberbowl_dates = ['2014-2-2','2015-2-1','2016-2-7','2017-2-5','2018-2-4','2019-2-3']
-
-    #Dict of holiday dates: shoulder halfwidth  [-S, -S+1, ..., holiday, holiday+1, ..., holiday+S]
-    #for now just use 3 as the shoulder width for all "major" holidays, 0 or 1 for "minor" holidays
-    #Use ODD numbers for shoulder sizes
-    holidays = {xmas_dates:3,
-                new_years_dates:3,
-                july4_dates:1,
-                halloween_dates:1,
-                cincodemayo_dates:1,
-                valentines_dates:1,
-                veterans_dates:1,
-                
-                thanksgiving_dates:3,
-                easter_dates:1,
-                
-                suberbowl_dates:1,
-                }
-    
-    #Assume additive holiday effects: (which should almost never matter anyway 
-    #for small shoulders unless there is overlap beteen some holidays. E.g. with shoulder=3, 
-    #Christmas and New Year's do NOT overlap.)
-    _ = np.zeros((2,Ndays))
-    encoded_holidays = pd.DataFrame(_,index=date_series)
-    #Iterate through each holiday, accumulating the effect:
-    for hd, shoulder in holidays.items():
-        #Since date series is potentially over few years, could have e.g. several Christmas furing that time range
-        for holiday_date in hd:
-            holiday_encoding = spiral_encoding(dates_series, holiday_date, shoulder)
-            xxxxx += holiday_encoding
-    return encoded_holidays
-
-
-
 def run():
     parser = argparse.ArgumentParser(description='Prepare data')
     parser.add_argument('data_dir')
@@ -500,6 +375,13 @@ def run():
         year_period = WEEK_NUMBER_MAX / (2 * np.pi) #!!!! need to be carefuly non-uniform weeks [52 has 10 days ???]  ---> actually in pandas numbering goes to 53, depending on start day of week for that year
         woy_norm = week / year_period #not sure if by default this starts on Monday vs Sunday
         woy = np.stack([np.cos(woy_norm), np.sin(woy_norm)], axis=-1)
+        #Also day of year number. Do not do same circle encoding, just let it be usual ordinal.
+        #Also, careful w leapyear. After February, year's w it would be out of phase vs. years w/o leap year
+        #Instead, could leave a gap for leapyear. If that particular year has it, fill it in with that ordinal,
+        #otherwise the model just does not have that index.
+        doy = features_times.dayofyear.values
+        #If not doing the circle encoding, then normalize:
+        doy = normalize(doy)
     
     
     if args.sampling_period=='weekly':
@@ -523,6 +405,14 @@ def run():
 
     #To catch longer term trending data, can also include year number. [depending on size of train / prediction windows and random sampling boundaries could be same value over whole series]
     year = (features_times.year - REFERENCE_FIRST_YEAR)/float(REFERENCE_LAST_YEAR-REFERENCE_FIRST_YEAR)
+    
+    
+    #Holidays: try my "spiral encoding":
+    #Right now only doing for daily sampled data:
+    if args.sampling_period=='daily':
+        holidays = encode_all_holidays__daily(features_times)
+    
+    
     
     
     # Assemble indices for quarterly lagged data
@@ -549,8 +439,6 @@ def run():
             year_autocorr=year_autocorr,
             quarter_autocorr=quarter_autocorr,
             #dow=dow,#N x 2 array since encoded week periodicity as complex number
-            
-            #woy=woy,#!!!!!!!!
             count_pctl_100=percentiles[5],#max #!!!!!!!!!!!!!!!! just to see what happens: apend one of my features.
         )
     
@@ -595,6 +483,8 @@ def run():
     if args.sampling_period=='daily':
         tensors['dow']=dow
         tensors['woy']=woy #and want want week number too, aggregating last ~10 days into week 52
+        tensors['doy']=doy
+        tensors['holidays']=holidays
     elif args.sampling_period=='weekly':
         tensors['woy']=woy
     elif args.sampling_period=='monthly':

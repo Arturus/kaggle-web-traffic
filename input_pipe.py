@@ -131,7 +131,7 @@ class InputPipe:
         :param counts: counts timeseries
         :param start: start index
         :param end: end index
-        :return: tuple (train_counts, test_counts, lagged_counts, [dow,woy,moy,year])
+        :return: tuple (train_counts, test_counts, lagged_counts, [subset of: dow,woy,moy,doy,year,holidays])
         """
         # Pad counts to ensure we have enough array length for prediction
         counts = tf.concat([counts, tf.fill([self.horizon_window_size], np.NaN)], axis=0)
@@ -146,6 +146,8 @@ class InputPipe:
         if self.sampling_period=='daily':
             cropped_dow = self.inp.dow[start:end]
             cropped_woy = self.inp.woy[start:end]
+            cropped_doy = self.inp.doy[start:end]
+            cropped_holidays = self.inp.holidays[start:end]
 #            cropped_moy = 0*cropped_dow #Month information is alreayd contained in week information. COuld incude anyway to be explicit, but for now do not use as a feature
         elif self.sampling_period=='weekly':
             cropped_woy = self.inp.woy[start:end]
@@ -195,7 +197,7 @@ class InputPipe:
 
         if self.features_set=='arturius' or self.features_set=='full':#for now, for full just do sam [include lagged]
             if self.sampling_period=='daily':
-                return x_counts, y_counts, lagged_count, cropped_dow, cropped_woy, cropped_year
+                return x_counts, y_counts, lagged_count, cropped_dow, cropped_woy, cropped_doy, cropped_year, cropped_holidays
             if self.sampling_period=='weekly':
                 return x_counts, y_counts, lagged_count, cropped_woy, cropped_year
             if self.sampling_period=='monthly':
@@ -276,7 +278,7 @@ class InputPipe:
         print(args)
         if self.features_set == 'arturius':
             if self.sampling_period == 'daily':
-                x_counts, y_counts, lagged_counts, dow, woy, year, pf_agent, pf_country, pf_site, page_ix, count_median, year_autocorr, quarter_autocorr, count_pctl_100 = args
+                x_counts, y_counts, lagged_counts, dow, woy, doy, year, holidays, pf_agent, pf_country, pf_site, page_ix, count_median, year_autocorr, quarter_autocorr, count_pctl_100 = args
             elif self.sampling_period == 'weekly':
                 x_counts, y_counts, lagged_counts, woy, year, pf_agent, pf_country, pf_site, page_ix, count_median, year_autocorr, quarter_autocorr, count_pctl_100 = args        
             elif self.sampling_period == 'monthly':
@@ -285,7 +287,7 @@ class InputPipe:
 #        count_pctl_0, count_pctl_5, count_pctl_25, count_pctl_75, count_pctl_95, count_pctl_100, count_variance)
         elif self.features_set == 'full':
             if self.sampling_period == 'daily':
-                x_counts, y_counts, lagged_counts, dow, woy, year, page_ix, count_median, year_autocorr, quarter_autocorr,\
+                x_counts, y_counts, lagged_counts, dow, woy, doy, year, holidays, page_ix, count_median, year_autocorr, quarter_autocorr,\
                 count_pctl_0, count_pctl_5, count_pctl_25, count_pctl_75, count_pctl_95, count_pctl_100, count_variance = args
             elif self.sampling_period == 'weekly':
                 x_counts, y_counts, lagged_counts, woy, year, page_ix, count_median, year_autocorr, quarter_autocorr,\
@@ -299,7 +301,9 @@ class InputPipe:
         # =============================================================================
         if self.sampling_period == 'daily':
             x_dow, y_dow = tf.split(dow, [self.history_window_size, self.horizon_window_size], axis=0)
-            x_woy, y_woy = tf.split(woy, [self.history_window_size, self.horizon_window_size], axis=0) #need to see how to fit in woy into inputs to this func
+            x_woy, y_woy = tf.split(woy, [self.history_window_size, self.horizon_window_size], axis=0)
+            x_doy, y_doy = tf.split(doy, [self.history_window_size, self.horizon_window_size], axis=0)
+            x_holidays, y_holidays = tf.split(holidays, [self.history_window_size, self.horizon_window_size], axis=0)
         elif self.sampling_period == 'weekly':
             x_woy, y_woy = tf.split(woy, [self.history_window_size, self.horizon_window_size], axis=0)
         elif self.sampling_period == 'monthly':
@@ -355,7 +359,7 @@ class InputPipe:
         # Train features, depending on measurement frequency
         x_features = tf.expand_dims(norm_x_counts, -1) # [n_timesteps] -> [n_timesteps, 1]
         if self.sampling_period == 'daily':
-            x_features = tf.concat([x_features, x_dow, x_woy, x_year], axis=1)
+            x_features = tf.concat([x_features, x_dow, x_woy, tf.expand_dims(x_doy,-1), x_year, x_holidays], axis=1)
         elif self.sampling_period == 'weekly':
             x_features = tf.concat([x_features, x_woy, x_year], axis=1)            
         elif self.sampling_period == 'monthly':
@@ -368,7 +372,7 @@ class InputPipe:
 
         # Test features
         if self.sampling_period == 'daily':
-            y_features = tf.concat([y_dow, y_woy, y_year], axis=1)
+            y_features = tf.concat([y_dow, y_woy, tf.expand_dims(y_doy,-1), y_year, y_holidays], axis=1)
         elif self.sampling_period == 'weekly':
             y_features = tf.concat([y_woy, y_year], axis=1)
         elif self.sampling_period == 'monthly':
@@ -561,7 +565,7 @@ def page_features(inp: VarFeeder, features_set):
     So do not need to pass in here the time-varying ones like day of week, 
     month of year, lagged, etc.
     
-    DO NOT return dow, woy, moy, year
+    DO NOT return dow, woy, moy, year, doy, holidays
     """
     
     if features_set=='arturius':

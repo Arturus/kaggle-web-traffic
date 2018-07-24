@@ -62,9 +62,9 @@ ll data/
 python3 make_features.py data/vars ours daily full --add_days=50
 #python3 make_features.py data/vars kaggle daily full --add_days=63
 
-python3 trainer.py full daily --name s32 --hparam_set=s32 --n_models=3 --asgd_decay=0.99 --max_steps=11500 --save_from_step=10000 --patience=5 --horizon_window_size=50 --history_window_size=100 --max_epoch=10
+python3 trainer.py full daily --name s32 --hparam_set=s32 --n_models=3 --asgd_decay=0.99 --max_steps=11500 --save_from_step=100 --patience=5 --max_epoch=10
 
-
+--horizon_window_size=50 --history_window_size=100
 
 
 
@@ -103,14 +103,14 @@ python3 trainer.py full daily --name s32 --hparam_set=s32 --n_models=3 --asgd_de
 
 
 To do:
-0. print out the SMAPE for the actual data [current is doing SMAPE of the unrounded log1p(data) which will likely be much smaller than for real]
 0. SMAPEs on ground truth 2018
 1. why encoder_state NANs in it for small train window lengths [is it train/predict window completeness thresholds?]
 1. performance heatmaps
 
 2. for weekly. monthly inputs, need to change few places in tensorflow code
 3. Prediction intervals
-4. Architecture improvements: his is not the usual encoder-decoder:   add C context vector to every decoder step
-4. bi, di, MH
-5. custom attention
+4. Architecture improvements: bi enc, dil
+4. K step recursive as hybrid of 1step recursive and K step direct
+4. MLP direct multihorizon
+5. custom attention [e.g. position specific]
 6. VAE aug
