@@ -413,6 +413,8 @@ class Model:
         self.hparams = hparams
         self.seed = seed
         self.inp = inp
+        self.lookback_K_actual = min(hparams.LOOKBACK_K, hparams.history_window_size_minmax[0])
+        print('self.lookback_K_actual',self.lookback_K_actual)
 
         encoder_output, h_state, c_state = make_encoder(inp.time_x, inp.encoder_features_depth, is_train, hparams, seed,
                                                         transpose_output=False)
@@ -441,12 +443,10 @@ class Model:
 
         # Run decoder
         #... = decoder(encoder_state, attn_features, prediction_inputs, previous_y)
-        print('inp.norm_x[:, -1]',inp.norm_x[:, -1])
-        print('inp.time_y',inp.time_y)
         decoder_targets, decoder_outputs = self.decoder(encoder_state,
                                                         attn_features if hparams.use_attn else None,
                                                         summary_z if hparams.RECURSIVE_W_ENCODER_CONTEXT else None,
-                                                        inp.time_y, inp.norm_x[:, -1]) #in decoder function def:   inp.time_y = "prediction_inputs";  inp.norm_x[:, -1] = "previous_y" (i.e. the final x normalizd))
+                                                        inp.time_y, inp.norm_x[:, -self.lookback_K_actual:]) #in decoder function def:   inp.time_y = "prediction_inputs";  inp.norm_x[:, -1] = "previous_y" (i.e. the final x normalizd))
         # Decoder activation losses
         dec_stab_loss = rnn_stability_loss(decoder_outputs, hparams.decoder_stability_loss / inp.horizon_window_size)
         dec_activation_loss = rnn_activation_loss(decoder_outputs, hparams.decoder_activation_loss / inp.horizon_window_size)
@@ -493,7 +493,7 @@ class Model:
         """
         :param encoder_state: shape [batch_size, encoder_rnn_depth]
         :param prediction_inputs: features for prediction days, tensor[batch_size, time, input_depth]
-        :param previous_y: Last day pageviews, shape [batch_size]
+        :param previous_y: Last day pageviews, shape [batch_size, self.lookback_K_actual] 
         :param attn_features: Additional features from attention layer, shape [batch, horizon_window_size, readout_depth*n_heads]
         :return: decoder rnn output
         """
@@ -511,7 +511,7 @@ class Model:
                     attn_depth = attn_features.shape[-1].value if attn_features is not None else 0
                     context_depth = summary_z.shape[-1].value if self.hparams.RECURSIVE_W_ENCODER_CONTEXT is not None else 0 #Should just be the encoder RNN depth
                     print('attn_depth',attn_depth, 'context_depth',context_depth)
-                    input_size = attn_depth + context_depth + prediction_inputs.shape[-1].value + 1 if idx == 0 else self.hparams.rnn_depth
+                    input_size = attn_depth + context_depth + prediction_inputs.shape[-1].value + self.lookback_K_actual if idx == 0 else self.hparams.rnn_depth
                     input_size = tf.Print(input_size, ['attn_depth',tf.shape(attn_depth),attn_depth, 'context_depth',tf.shape(context_depth),context_depth, 'input_size',tf.shape(input_size),input_size])#!!!!!!!!!!
                     cell = rnn.DropoutWrapper(cell, dtype=tf.float32, input_size=input_size,
                                               variational_recurrent=hparams.decoder_variational_dropout[idx],
@@ -552,7 +552,9 @@ class Model:
 
         # Stop condition for decoding loop
         def cond_fn(timestep, prev_output, prev_state, array_targets: tf.TensorArray, array_outputs: tf.TensorArray):
-            return timestep < predict_timesteps
+            return timestep < predict_timesteps #If doing k2-step lookahead prediction for k2>1, possibly want to 
+            #adjust condition to do appropriate n steps > predict_timesteps... and then combine predictions for those steps to get single prediction, 
+            #e.g. by exponential weighting  backward in time from this step.
 
         # FC projecting layer to get single predicted value from RNN output
         def project_output(tensor):
@@ -563,7 +565,7 @@ class Model:
             """
             Main decoder loop
             :param timestep: timestep number
-            :param prev_output: Output(prediction) from previous step
+            :param prev_output: Output(prediction) from previous step --> from previous K steps: self.lookback_K_actual 
             :param prev_state: RNN state tensor from previous step
             :param array_targets: Predictions, each step will append new value to this array
             :param array_outputs: Raw RNN outputs (for regularization losses)
@@ -571,6 +573,8 @@ class Model:
             """
             # RNN inputs for current step
             features = inputs_by_time[timestep]
+#            print('features',features)
+#            print('previous_y',previous_y)
 
             # [batch, horizon_window_size, readout_depth * n_heads] -> [batch, readout_depth * n_heads]
             if attn_features is not None:
@@ -578,19 +582,13 @@ class Model:
                 attn = attn_features[:, timestep, :]
                 # Append previous predicted value + attention vector to input features
                 next_input = tf.concat([prev_output, features, attn], axis=1)
+               
             else:
-                next_input = tf.concat([prev_output, features], axis=1)
                 # Append previous predicted value to input features
-
+                next_input = tf.concat([prev_output, features], axis=1)
             #If using more of a typical encoder-decoder, also have encoder context each time:
             if self.hparams.RECURSIVE_W_ENCODER_CONTEXT:
                 next_input = tf.concat([next_input, summary_z], axis=1) #!!!!!!!!summary_z[-1]
-#                if self.hparams.encoder_rnn_layers == 1:
-#                    next_input = tf.concat([next_input, summary_z], axis=1) #!!!!!!!!summary_z[-1]
-#                elif self.hparams.encoder_rnn_layers > 1:
-#                    next_input = tf.concat([next_input, summary_z[-1]], axis=1) #!!!!!!!!summary_z[-1]
-#                next_input = tf.Print(next_input,['next_input',tf.shape(next_input),next_input])
-               
                     
             # Run RNN cell
             output, state = cell(next_input, prev_state)
@@ -602,15 +600,28 @@ class Model:
             if return_raw_outputs:
                 array_outputs = array_outputs.write(timestep, output)
             array_targets = array_targets.write(timestep, projected_output)
+            
+            #Update prev_output
+            #(delete oldest left, append rightmost)
+            if self.lookback_K_actual > 1:
+                prev_output = prev_output[:,1:] #All examples in batch, exclude oldest output [leftmost oldest, rightmost most recent]
+#                print('prev_output',prev_output)
+#                print('projected_output',projected_output)
+                updated_outputs = tf.concat([prev_output,projected_output],axis=1)
+#                print('updated_outputs',updated_outputs)
+            elif self.lookback_K_actual==1:
+                updated_outputs = prev_output
+                
             # Increment timestep and return
-            return timestep + 1, projected_output, state, array_targets, array_outputs #!!!!!! quantiles: projected_output will be diff dims
+            return timestep + 1, updated_outputs, state, array_targets, array_outputs #!!!!!! quantiles: projected_output will be diff dims
 
         # Initial values for loop
-        loop_init = [tf.constant(0, dtype=tf.int32),
-                     tf.expand_dims(previous_y, -1),
-                     encoder_state,
-                     tf.TensorArray(dtype=tf.float32, size=predict_timesteps),
-                     tf.TensorArray(dtype=tf.float32, size=predict_timesteps) if return_raw_outputs else tf.constant(0)] #!!!!!!! size= ... x N_pctls
+        loop_init = [tf.constant(0, dtype=tf.int32), #timestep
+#                     previous_y if self.lookback_K_actual  > 1 else tf.expand_dims(previous_y, -1), #prev_output
+                    previous_y, #prev_output
+                     encoder_state, #prev_state
+                     tf.TensorArray(dtype=tf.float32, size=predict_timesteps), #array_targets
+                     tf.TensorArray(dtype=tf.float32, size=predict_timesteps) if return_raw_outputs else tf.constant(0)] #array_outputs #!!!!!!! size= ... x N_pctls
         # Run the loop
         _timestep, _projected_output, _state, targets_ta, outputs_ta = tf.while_loop(cond_fn, loop_fn, loop_init)
         

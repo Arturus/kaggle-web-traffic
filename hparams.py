@@ -54,6 +54,12 @@ params_s32 = dict(
     #we can more fairly assess performance over range of history/horizon windows:
     history_window_size_minmax=[7,365],
     horizon_window_size_minmax=[7,60],
+    
+    #Lookback K steps: [without specifying, default previous Kaggle setting is K=1]:
+    #for predicting y_i, insteda of just feeding in previous K=1 prediction (y_i-1),
+    #feed in all previous K predictions: y_
+    LOOKBACK_K = 3, #!!!!Can NOT set this to be bigger than min history size (history_window_size_minmax[0])
+    #since then depending on random draw would possibly need to look back further than history size.
 )
 
 

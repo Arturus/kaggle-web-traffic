@@ -41,7 +41,17 @@ See also [detailed model description](how_it_works.md)
 
 -----------------------------------
 
-GK modifications for own data:
+GK modifications for own forecasting application:
+
+1) Several architecture improvements:
+	- give encoded representation vector as context to every decoder timestep
+	- K step lookback: ideally the RNN would learn a hidden state representation that ~completely describes state of the system. In realiy, that is too much to expect. In addition to previous timestep prediction y_i-1, also feed in y_i-2,...,y_i-K for K-step lookback.
+	- performance analysis of validation set SMAPE as function of history/horizon window sizes [randomized uniformly in training over all min-max range of history/horizon window sizes]
+	- more in development
+2) More features, relevant to my data. More focus on seasonalities, and "spiral encoding" for holidays. Automated data augmentation.
+3) Dealing with holes/sparsity as in my data.
+
+
 1. PREPROCESS.py - Maximize reuse of existing architecture: just put my data in exact same format as Kaggle competition csv's
 2. $source activate gktf.  #previously set up a conda environment w/ Python 3.6, tensorflow 1.4.0, to match same versions as Kaggle solution
 3. $cd ..../kaggle-web-traffic
@@ -102,6 +112,11 @@ python3 trainer.py full daily --name s32 --hparam_set=s32 --n_models=3 --asgd_de
 
 
 
+#For doing performance analysis of SMAPE as function of history/horizon window sizes:
+./RUN_MANY_TRAIN_VAL_WINDOWS
+
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------
 To do:
 0. SMAPEs on ground truth 2018
 1. why encoder_state NANs in it for small train window lengths [is it train/predict window completeness thresholds?]

@@ -624,7 +624,7 @@ def train(features_set, sampling_period, name, hparams, multi_gpu=False, n_model
             for _ in tqr:
                 #!!!!!!!!!! Variable random length train predict windows
                 #Random draw the train, predict window lengths
-                print(_)
+#                print(_)
                 trainer = random_draw_history_and_horizon_window_sizes(trainer)
 #                print('+++++++++++++++', [(TT.train_model.inp.history_window_size,TT.train_model.inp.horizon_window_size) for TT in trainer.trainers])
 #                print('--------', [(TT.train_model.inp.max_train_empty,TT.train_model.inp.max_predict_empty) for TT in trainer.trainers])
