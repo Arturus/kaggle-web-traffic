@@ -403,7 +403,7 @@ def data_augmentation(df, jitter_pcts_list=[.05,.01], do_low_pass_filter=True, a
         
 
 
-def format_like_Kaggle(df, myDataDir, imputation_method, sampling_period, start_date=None, end_date=None):
+def format_like_Kaggle(df, myDataDir, imputation_method, sampling_period, do_augmentation, start_date=None, end_date=None):
     """
     Take my data and format it exactly as needed to use for the Kaggle seq2seq
     model [requires making train_1.csv, train_2.csv, key_1.csv, key_2.csv]
@@ -548,7 +548,8 @@ def format_like_Kaggle(df, myDataDir, imputation_method, sampling_period, start_
                 dd = imputation_lagKmedian_single_series(dd,seasonality,N_seasons,OUT_OF_RANGE_FILL_VALUE)
 
             #Data augmentation
-            dd = data_augmentation(dd)
+            if do_augmentation:
+                dd = data_augmentation(dd)
             
             df_list.append(dd)
         
@@ -641,6 +642,7 @@ if __name__ == '__main__':
     END_DATE = '2017-12-31' #None
     REMOVE_ID_LIST = []#[3,4]#id's for locations that are no longer useful
     SAMPLING_PERIOD = 'daily' #'daily', 'weekly', 'monthly'
+    DO_AUGMENTATION = False #True
     RANDOM_SEED = None
 
     # =============================================================================
@@ -663,5 +665,5 @@ if __name__ == '__main__':
     df = remove_cities(df,REMOVE_ID_LIST)
     
     #Put into same format as used by Kaggle, save out csv's    
-    df = format_like_Kaggle(df, myDataDir, IMPUTATION_METHOD, SAMPLING_PERIOD, start_date=START_DATE, end_date=END_DATE)
+    df = format_like_Kaggle(df, myDataDir, IMPUTATION_METHOD, SAMPLING_PERIOD, DO_AUGMENTATION, start_date=START_DATE, end_date=END_DATE)
 

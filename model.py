@@ -509,7 +509,7 @@ class Model:
                 #so maybe do a projection down, on the encoder side first [e.g. encoder output??] then better here...
                 if self.is_train and has_dropout:
                     attn_depth = attn_features.shape[-1].value if attn_features is not None else 0
-                    context_depth = summary_z.shape[-1].value if self.hparams.RECURSIVE_W_ENCODER_CONTEXT is not None else 0 #Should just be the encoder RNN depth
+                    context_depth = summary_z.shape[-1].value if self.hparams.RECURSIVE_W_ENCODER_CONTEXT else 0 #Should just be the encoder RNN depth
                     print('attn_depth',attn_depth, 'context_depth',context_depth)
                     input_size = attn_depth + context_depth + prediction_inputs.shape[-1].value + self.lookback_K_actual if idx == 0 else self.hparams.rnn_depth
                     input_size = tf.Print(input_size, ['attn_depth',tf.shape(attn_depth),attn_depth, 'context_depth',tf.shape(context_depth),context_depth, 'input_size',tf.shape(input_size),input_size])#!!!!!!!!!!

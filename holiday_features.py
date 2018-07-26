@@ -36,23 +36,23 @@ def encode_all_holidays__daily(dates_range):
     # =============================================================================
     # MOVING holidays [variable date]
     # =============================================================================
-    def get_thanksgivings__daily(dates_range):
-        """
-        Get Thanksgiving holiday dates within the few years time range
-        """
-    #    4th Thurs of Novmber...
-    #    if (month==11) and (dayofweek=='Thurs') and (22<=dayofmonth<=28)
-        thanksgiving_dates = []
-        #...
-        return thanksgiving_dates
+#    def get_thanksgivings__daily(dates_range):
+#        """
+#        Get Thanksgiving holiday dates within the few years time range
+#        """
+#    #    4th Thurs of Novmber...
+#    #    if (month==11) and (dayofweek=='Thurs') and (22<=dayofmonth<=28)
+##        thanksgiving_dates = [i.strftime('%Y-%m-%d') for i in dates_range if ((i.month==11) and (i.dayofweek==3) and (i.dayofmonth...))]
+#        #...
+#        return thanksgiving_dates
     
-    def get_Easters__daily(dates_range):
-        """
-        Get Easter holiday dates within the few years time range
-        """
-        easter_dates = []
-        #...
-        return easter_dates  
+#    def get_Easters__daily(dates_range):
+#        """
+#        Get Easter holiday dates within the few years time range
+#        """
+#        easter_dates = []
+#        #...
+#        return easter_dates  
         
 #    def encode_custom_dates__daily(dates_range,dates_list):
 #        """
@@ -124,8 +124,10 @@ def encode_all_holidays__daily(dates_range):
     
 
     #Rule Based Moving Holidays
-    thanksgiving_dates = get_thanksgivings__daily(dates_range)
-    easter_dates = get_Easters__daily(dates_range)
+#    thanksgiving_dates = get_thanksgivings__daily(dates_range)
+    thanksgiving_dates = ['2014-11-27','2015-11-26','2016-11-24','2017-11-23','2018-11-22','2019-11-28','2020-11-26'] #just m,anually define for now
+#    easter_dates = get_Easters__daily(dates_range) #too complicated : moon stuff, just set custom dates
+    easter_dates = ['2014-04-20','2015-04-05','2016-03-27','2017-04-16','2018-04-01','2019-04-21','2020-04-20']
     #... Labor Day, Memorial Day, President's Day, MLK Day, Columbus Day, Tax Day
     #Custom / Single Event moving Holidays
     suberbowl_dates = ['2014-02-02','2015-02-01','2016-02-07','2017-02-05','2018-02-04','2019-02-03']

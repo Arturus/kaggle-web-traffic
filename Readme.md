@@ -45,7 +45,7 @@ GK modifications for own forecasting application:
 
 1) Several architecture improvements:
 	- give encoded representation vector as context to every decoder timestep
-	- K step lookback: ideally the RNN would learn a hidden state representation that ~completely describes state of the system. In realiy, that is too much to expect. In addition to previous timestep prediction y_i-1, also feed in y_i-2,...,y_i-K for K-step lookback.
+	- K step lookback: ideally the RNN would learn a hidden state representation that ~completely describes state of the system. In realiy, that is too much to expect. In addition to previous timestep prediction y_i-1, also feed in y_i-2,...,y_i-K for K-step lookback. [~same as using lagged features]
 	- performance analysis of validation set SMAPE as function of history/horizon window sizes [randomized uniformly in training over all min-max range of history/horizon window sizes]
 	- more in development
 2) More features, relevant to my data. More focus on seasonalities, and "spiral encoding" for holidays. Automated data augmentation.
@@ -72,7 +72,7 @@ ll data/
 python3 make_features.py data/vars ours daily full --add_days=50
 #python3 make_features.py data/vars kaggle daily full --add_days=63
 
-python3 trainer.py full daily --name s32 --hparam_set=s32 --n_models=3 --asgd_decay=0.99 --max_steps=11500 --save_from_step=100 --patience=5 --max_epoch=10
+python3 trainer.py full daily --name s32 --hparam_set=s32 --n_models=3 --asgd_decay=0.99 --max_steps=11500 --save_from_step=100 --patience=5 --max_epoch=10 --save_epochs_performance
 
 --horizon_window_size=50 --history_window_size=100
 

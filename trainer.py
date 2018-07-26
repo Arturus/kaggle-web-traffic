@@ -400,7 +400,7 @@ def train(features_set, sampling_period, name, hparams, multi_gpu=False, n_model
           seed=None, logdir='data/logs', max_epoch=100, patience=2, train_sampling=1.0,
           eval_sampling=1.0, eval_memsize=5, gpu=0, gpu_allow_growth=False, save_best_model=False,
           forward_split=False, write_summaries=False, verbose=False, asgd_decay=None, tqdm=True,
-          side_split=True, max_steps=None, save_from_step=None, do_eval=True):#, horizon_window_size=63, history_window_size=283):
+          side_split=True, max_steps=None, save_from_step=None, do_eval=True, save_epochs_performance=False):#, horizon_window_size=63, history_window_size=283):
 
     eval_k = int(round(26214 * eval_memsize / n_models))
     eval_batch_size = int(
@@ -452,6 +452,7 @@ def train(features_set, sampling_period, name, hparams, multi_gpu=False, n_model
         history and horizon sizes in TRAINING phase.
         (in prediction phase, use fixed sizes, and then for different sizes see how performance is.)
         """
+#        metrics = []
         history = np.random.randint(low=hparams.history_window_size_minmax[0],high=hparams.history_window_size_minmax[1]+1)
         horizon = np.random.randint(low=hparams.horizon_window_size_minmax[0],high=hparams.horizon_window_size_minmax[1]+1)        
         for TT in trainer.trainers:
@@ -460,6 +461,19 @@ def train(features_set, sampling_period, name, hparams, multi_gpu=False, n_model
             TT.train_model.inp.attn_window = history - horizon + 1
             TT.train_model.inp.max_train_empty = int(round(history * (1 - TT.train_model.inp.train_completeness_threshold)))
             TT.train_model.inp.max_predict_empty = int(round(horizon * (1 - TT.train_model.inp.predict_completeness_threshold)))
+#            metrics.append(TT.dict_metrics)
+#        MOD_=0
+#        STAGE_=1#index
+#        __ = list(metrics[MOD_].values())[STAGE_]['SMAPE']
+#        print(__.name)
+#        print(__.op)
+#        print(__.smoother)
+#        print(__.epoch_values)
+#        print(__.best_value)
+#        print(__.best_step)
+#        print(__.last_epoch)
+#        print(__.improved)
+#        print(__._top)
         return trainer
 
 
@@ -613,6 +627,10 @@ def train(features_set, sampling_period, name, hparams, multi_gpu=False, n_model
         # Contains best value (first item) and subsequent values
         best_epoch_smape = []
 
+        #Save out per epoch values to look at later [only per epoch, not savingout per step]
+        if save_epochs_performance:
+            output_list = []
+                    
         for epoch in range(max_epoch):
 
             # n_steps = pusher.N_time_series // batch_size
@@ -625,7 +643,7 @@ def train(features_set, sampling_period, name, hparams, multi_gpu=False, n_model
                 #!!!!!!!!!! Variable random length train predict windows
                 #Random draw the train, predict window lengths
 #                print(_)
-                trainer = random_draw_history_and_horizon_window_sizes(trainer)
+#                trainer = random_draw_history_and_horizon_window_sizes(trainer)
 #                print('+++++++++++++++', [(TT.train_model.inp.history_window_size,TT.train_model.inp.horizon_window_size) for TT in trainer.trainers])
 #                print('--------', [(TT.train_model.inp.max_train_empty,TT.train_model.inp.max_predict_empty) for TT in trainer.trainers])
 
@@ -690,6 +708,10 @@ def train(features_set, sampling_period, name, hparams, multi_gpu=False, n_model
                            eval_mae.avg_epoch,  eval_mae_side.avg_epoch,  eval_smape.avg_epoch,  eval_smape_side.avg_epoch,
                            trainer.has_active())
                 print(status, file=sys.stderr)
+                if save_epochs_performance:
+                    output_list.append([eval_mae.best_epoch, eval_mae_side.best_epoch, eval_smape.best_epoch, eval_smape_side.best_epoch,
+                               eval_mae.avg_epoch,  eval_mae_side.avg_epoch,  eval_smape.avg_epoch,  eval_smape_side.avg_epoch,
+                               trainer.has_active()])
             else:
                 print(status, file=sys.stderr)
                 print("Early stopping!", file=sys.stderr)
@@ -699,6 +721,11 @@ def train(features_set, sampling_period, name, hparams, multi_gpu=False, n_model
                 break
             sys.stderr.flush()
 
+        if save_epochs_performance:
+            x = np.array(output_list)
+            outname = f"{logdir}/{name}_training_epochs_performance.npy"
+            np.save(outname,x)
+            
         # noinspection PyUnboundLocalVariable
         return np.mean(best_epoch_smape, dtype=np.float64)
 
@@ -822,6 +849,7 @@ if __name__ == '__main__':
     parser.add_argument('--save_from_step', type=int, help="Save model on each evaluation (10 evals per epoch), starting from this step")
 #    parser.add_argument('--horizon_window_size', default=63, type=int, help="Number of days to predict")
 #    parser.add_argument('--history_window_size', default=283, type=int, help="Train window chunk size")#Now that we want to do train size - val size performance heatmaps
+    parser.add_argument('--save_epochs_performance', default=False, dest='save_epochs_performance', action='store_true', help='Save out per EPOCH metrics (NOT per step, only per EPOCH')
     args = parser.parse_args()
 
     param_dict = dict(vars(args))
