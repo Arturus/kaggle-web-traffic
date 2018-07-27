@@ -39,6 +39,10 @@ def load_my_data(myDataDir):
     dflist = []
     for ii, ff in enumerate(files):
         df = pd.read_csv(os.path.join(myDataDir,ff))
+        #For the test set data, csvs slightly diff format, so need these 2 steps
+        if "id" not in df.columns:
+            df['id'] = ff.split('.')[0]
+            df.rename(columns={'dt':'date'},inplace=True)
         dflist += [df]
     df = pd.concat(dflist,sort=False)
     df = df[['id','date','y']]
@@ -69,13 +73,13 @@ def get_earliest_latest_dates(df):
 
 
 
-#def __keep_btwn_dates(df,start_date,end_date):
+#def __keep_btwn_dates(df,start_date,test_end_date):
 #    """
 #    Excerpt only the data between [inclusive] start and end date.
 #    Both dates are formatted as 'YYYY-mm-DD'
 #    """
 #    len1 = len(df)
-#    df = df.loc[(df['date']>=start_date) & (df['date']<=end_date)]
+#    df = df.loc[(df['date']>=start_date) & (df['date']<=test_end_date)]
 #    df.reset_index(inplace=True,drop=True)
 #    len2 = len(df)
 #    rows_removed = len1 - len2
@@ -153,92 +157,92 @@ def remove_seasonal_blocks(df):
 
 
 
-def do_imputation(df,imputation_method):
-    """
-    For places in the data where missing gaps are smalle (<7 days),
-    just fill in those few missing days with a basic 
-    remove 
-    """
-    
-    
-    def imputation_small_gaps(df,imputation_method):
-        """
-        Do missing data imputation using the given forecasting method
-        Only use this for short missing segments; do not use for longer ones.
-        """
-        if imputation_method == 'STL':
-            #stl = seasonal_decompose(x)
-            df_filled = df
-            pass
-        else:
-            raise Exception('That method not implemented yet')
-        return df_filled    
-    
-    
-    def imputation_big_gaps(df):
-        """
-        Do missing data imputation / removal
-        For big gaps [gaps bigger than 1 seasonality]
-        """
-        df_filled = df
-        return df_filled    
-    
-    
-    def imputation__simple(df,imputation_method):
-        """
-        Juat as placeholder for now,
-        fill all missing with zeros,
-        or mean or median imputation
-        """
-        missing_values = [-1]#['NaN', -1]
-        imp = Imputer(missing_values=missing_values,
-                strategy=imputation_method,
-                axis=1)
-        vals = imp.fit_transform(df.values)#[:,1:]) #The data is only [:,1:]. 
-        #"Some rows only contain missing values: [ 35 251 281]"
-        #But get some rows with all missing vals. Since we don't actualyl care about this and never will use this 
-        #for now just use the "Page" number as well to avoid this.
-        
-        
-        cols = df.columns
-        new_df = pd.DataFrame({cols[i]:vals[:,i] for i in range(vals.shape[1])})
-        new_df['Page'] = df['Page']
-        #Put "Page" at left
-        cols = new_df.columns.tolist()
-        new_df = new_df[cols[-1:]+cols[:-1]]
-        new_df.reset_index(drop=True,inplace=True)
-        return new_df
-    
-
-    
-    
-    
-    if (imputation_method == 'median') or (imputation_method == 'mean'):
-        df = imputation__simple(df,imputation_method)
-        
-#    if imputation_method == 'lagKmedian':
-#        #First get rid of the big blocks of mising values [more than 1 seasonality long]
-##        df = imputation_big_gaps(df)
-#        #Then deal with the short missing holes
-#        N_seasons = 4
-#        df = imputation_lagKmedian(df,N_seasons)
-        
-    else:
-        raise Exception('not implemented other methods yet')
-    
-    #First deal with small gaps (missing gaps fewer than e.g. 7 days):
-    #df = imputation_small_gaps(df,imputation_method)
-    
-    #Deal with longer gaps [e.g. by removing enough blocks of length S, where
-    #S is the seasonality, to completely get rid of gaps]
-    #...
-    #df = imputation_big_gaps(df)
-    
-    #Trim start and end of each series/ to align to get in phase
-    #df = 
-    #...
-    
-    return df
+#def do_imputation(df,imputation_method):
+#    """
+#    For places in the data where missing gaps are smalle (<7 days),
+#    just fill in those few missing days with a basic 
+#    remove 
+#    """
+#    
+#    
+#    def imputation_small_gaps(df,imputation_method):
+#        """
+#        Do missing data imputation using the given forecasting method
+#        Only use this for short missing segments; do not use for longer ones.
+#        """
+#        if imputation_method == 'STL':
+#            #stl = seasonal_decompose(x)
+#            df_filled = df
+#            pass
+#        else:
+#            raise Exception('That method not implemented yet')
+#        return df_filled    
+#    
+#    
+#    def imputation_big_gaps(df):
+#        """
+#        Do missing data imputation / removal
+#        For big gaps [gaps bigger than 1 seasonality]
+#        """
+#        df_filled = df
+#        return df_filled    
+#    
+#    
+#    def imputation__simple(df,imputation_method):
+#        """
+#        Juat as placeholder for now,
+#        fill all missing with zeros,
+#        or mean or median imputation
+#        """
+#        missing_values = [-1]#['NaN', -1]
+#        imp = Imputer(missing_values=missing_values,
+#                strategy=imputation_method,
+#                axis=1)
+#        vals = imp.fit_transform(df.values)#[:,1:]) #The data is only [:,1:]. 
+#        #"Some rows only contain missing values: [ 35 251 281]"
+#        #But get some rows with all missing vals. Since we don't actualyl care about this and never will use this 
+#        #for now just use the "Page" number as well to avoid this.
+#        
+#        
+#        cols = df.columns
+#        new_df = pd.DataFrame({cols[i]:vals[:,i] for i in range(vals.shape[1])})
+#        new_df['Page'] = df['Page']
+#        #Put "Page" at left
+#        cols = new_df.columns.tolist()
+#        new_df = new_df[cols[-1:]+cols[:-1]]
+#        new_df.reset_index(drop=True,inplace=True)
+#        return new_df
+#    
+#
+#    
+#    
+#    
+#    if (imputation_method == 'median') or (imputation_method == 'mean'):
+#        df = imputation__simple(df,imputation_method)
+#        
+##    if imputation_method == 'lagKmedian':
+##        #First get rid of the big blocks of mising values [more than 1 seasonality long]
+###        df = imputation_big_gaps(df)
+##        #Then deal with the short missing holes
+##        N_seasons = 4
+##        df = imputation_lagKmedian(df,N_seasons)
+#        
+#    else:
+#        raise Exception('not implemented other methods yet')
+#    
+#    #First deal with small gaps (missing gaps fewer than e.g. 7 days):
+#    #df = imputation_small_gaps(df,imputation_method)
+#    
+#    #Deal with longer gaps [e.g. by removing enough blocks of length S, where
+#    #S is the seasonality, to completely get rid of gaps]
+#    #...
+#    #df = imputation_big_gaps(df)
+#    
+#    #Trim start and end of each series/ to align to get in phase
+#    #df = 
+#    #...
+#    
+#    return df
 
 
 
@@ -403,7 +407,7 @@ def data_augmentation(df, jitter_pcts_list=[.05,.01], do_low_pass_filter=True, a
         
 
 
-def format_like_Kaggle(df, myDataDir, imputation_method, sampling_period, do_augmentation, start_date=None, end_date=None):
+def format_like_Kaggle(df, mode, myDataDir, imputation_method, sampling_period, do_augmentation, train_test_split_date, start_date=None, test_end_date=None):
     """
     Take my data and format it exactly as needed to use for the Kaggle seq2seq
     model [requires making train_1.csv, train_2.csv, key_1.csv, key_2.csv]
@@ -411,7 +415,7 @@ def format_like_Kaggle(df, myDataDir, imputation_method, sampling_period, do_aug
     """
     
     
-    def make_train_csv(df, save_path, imputation_method, sampling_period, start_date, end_date):
+    def make_train_csv(df, mode, save_path, imputation_method, sampling_period, start_date, test_end_date):
         """
         Make the train_2.csv
         """
@@ -503,13 +507,36 @@ def format_like_Kaggle(df, myDataDir, imputation_method, sampling_period, do_aug
         earliest, latest = get_earliest_latest_dates(df)
         
         #Excerpt only the relevant time interval, if manually specified
+        #Earliest start date is applied to both training and testing
+        #(testing is a superset of training)
         if start_date:
             earliest = max(earliest,start_date)
-        if end_date:
-            latest = min(latest,end_date)
+            
+        #In training mode, set th end date by clipoing the data so it does not 
+        #contain the most recent data that is used for TEST set:
+        if mode=='TRAIN':
+            latest = min(latest, train_test_split_date)   
+
+        
+        if mode=='TEST':
+            #In TEST mode, to have a COMPLETELY distinct test set, start from day after last day of taining set:
+            #(this means in TEST phase, not even the known history will overlap with the training set, 
+            #which arguably wiould be ok as long as the horizon is completely outside the training data,
+            #but to be extra conservative, do this):
+            assert (earliest < train_test_split_date), 'TRAIN end date (/TEST start date) must be after start of data'
+            next_day = pd.to_datetime(train_test_split_date) + pd.Timedelta(1,unit='D')
+#            next_day_string = next_day.dt.strftime('%Y-%m-%d')
+            next_day_string = next_day.strftime('%Y-%m-%d')
+            earliest = max(earliest,next_day_string)
+            
+            if test_end_date:
+                #In TEST mode, if there is a manually defined end date, clip there:
+                latest = min(latest,test_end_date)
+                assert (latest > train_test_split_date), 'TEST end date must be after TRAIN end date'
+                
         
         idx = pd.date_range(earliest,latest) #!!!!!! fro now doing daily. When doing weekly also keep with default freq='D' . If change to 'W' alignment gets messed up. Just do daily 'D', then later can correct easily.
-        OUT_OF_RANGE_FILL_VALUE = np.NaN #0 #-1 #puttign as nan casts to float and cannot convert to int
+        OUT_OF_RANGE_FILL_VALUE = np.NaN #0 #-1 
 
 
         #Do aggregation from DAILY --> WEEKLY before doing any kind of imputation
@@ -518,7 +545,7 @@ def format_like_Kaggle(df, myDataDir, imputation_method, sampling_period, do_aug
             df = aggregate_to_weekly(df, AGGREGATION_TYPE)    
 
     
-        #Some id's [15,16] have their missing values recorded as "-1"
+        #Some id's [15,16 in training;  multiple in testing] have their missing values recorded as "-1"
         #vs. later id's have their missing values simply missing from the original csv
         #So for those id's that actually have -1, convert to NAN first:
         df.replace(-1.,np.nan,inplace=True)
@@ -538,18 +565,20 @@ def format_like_Kaggle(df, myDataDir, imputation_method, sampling_period, do_aug
             dd['Page'] = u
             
             print(i,u, 'of {}'.format(unique_ids[-1]))
-            if imputation_method=='lagKmedian':
-                if sampling_period=='daily':
-                    N_seasons = 4
-                    seasonality = 7
-                elif sampling_period=='weekly':
-                    N_seasons = 4
-                    seasonality = 1
-                dd = imputation_lagKmedian_single_series(dd,seasonality,N_seasons,OUT_OF_RANGE_FILL_VALUE)
-
-            #Data augmentation
-            if do_augmentation:
-                dd = data_augmentation(dd)
+            #Only do imputation on training data, NOT on test data.
+            if mode=='TRAIN':
+                if imputation_method=='lagKmedian':
+                    if sampling_period=='daily':
+                        N_seasons = 4
+                        seasonality = 7
+                    elif sampling_period=='weekly':
+                        N_seasons = 4
+                        seasonality = 1
+                    dd = imputation_lagKmedian_single_series(dd,seasonality,N_seasons,OUT_OF_RANGE_FILL_VALUE)
+    
+                #Data augmentation
+                if do_augmentation:
+                    dd = data_augmentation(dd)
             
             df_list.append(dd)
         
@@ -577,13 +606,13 @@ def format_like_Kaggle(df, myDataDir, imputation_method, sampling_period, do_aug
             
 
         
-        
-        #Imputation, dealing with missing seasonality blocks / out of phase
-        if imputation_method=='median' or imputation_method=='mean':
-            df = do_imputation(df,imputation_method)
-            #Could do impoutation then downsampling, vs. downsampling then imputation ... unclear which is better here in general.
-            #for now assume we do ipmutation THEN aggregation:
-            #df = aggregate(df,sampling_period)
+#        #No longer use this: imputation done per series at creation
+#        #Imputation, dealing with missing seasonality blocks / out of phase
+#        if imputation_method=='median' or imputation_method=='mean':
+#            df = do_imputation(df,imputation_method)
+#            #Could do impoutation then downsampling, vs. downsampling then imputation ... unclear which is better here in general.
+#            #for now assume we do ipmutation THEN aggregation:
+#            #df = aggregate(df,sampling_period)
 
 
         #Reorder some things just in case
@@ -609,8 +638,9 @@ def format_like_Kaggle(df, myDataDir, imputation_method, sampling_period, do_aug
     
     #Make the train csv [for now just do 1, ignore the train 2 part ???]
     #save_path = os.path.join(os.path.split(myDataDir)[0],f"train_2[ours_{sampling_period}].csv")
-    save_path = os.path.join(os.path.split(myDataDir)[0],"train_2_ours_{}.csv".format(sampling_period))
-    df = make_train_csv(df, save_path, imputation_method, sampling_period, start_date, end_date)
+    suffix = '_TEST' if mode=='TEST' else ''
+    save_path = os.path.join(os.path.split(myDataDir)[0],"train_2_ours_{}{}.csv".format(sampling_period,suffix))
+    df = make_train_csv(df, mode, save_path, imputation_method, sampling_period, start_date, test_end_date)
 
     #For the prediction phase, need the key ????
 #    make_key_csv(df)
@@ -636,34 +666,55 @@ if __name__ == '__main__':
     #     PARAMETERS
     # =============================================================================
     # TOTAL COMPLETED TRIPS:
-    myDataDir = r"/Users/kocher/Desktop/forecasting/exData/totalCompletedTripsDaily"
+    #myDataDir_TRAIN = r"/Users/kocher/Desktop/forecasting/exData/totalCTDaily"
+    myDataDir_TRAIN = r"/Users/kocher/Desktop/forecasting/exData/totalCTDaily___2018"#Since the test data is just the same data, but a superset, just use it for consistency
+    myDataDir_TEST = r"/Users/kocher/Desktop/forecasting/exData/totalCTDaily___2018"     
     IMPUTATION_METHOD = 'lagKmedian' #'median' #'STL' #'lagKmedian' #None
     START_DATE = '2015-01-01' #None
-    END_DATE = '2017-12-31' #None
+    TEST_END_DATE = '2018-07-05' #None #'2018-07-05' just trim off 2 rightmost days since many cities NAN on 7/7/18
+    TRAIN_TEST_SPLIT_DATE = '2017-04-30' #The last day date to include in training set [and 1st NEW day of test set will be the next day.]
     REMOVE_ID_LIST = []#[3,4]#id's for locations that are no longer useful
     SAMPLING_PERIOD = 'daily' #'daily', 'weekly', 'monthly'
-    DO_AUGMENTATION = False #True
+    DO_AUGMENTATION = False #False #True
     RANDOM_SEED = None
 
     # =============================================================================
     #     MAIN
     # =============================================================================
+   
     print('START_DATE',START_DATE)
-    print('END_DATE',END_DATE)
+    print('TEST_END_DATE',TEST_END_DATE)
+    print('TRAIN_TEST_SPLIT_DATE',TRAIN_TEST_SPLIT_DATE)
+    print('DO_AUGMENTATION',DO_AUGMENTATION)
+    print('RANDOM_SEED',RANDOM_SEED)        
     print('REMOVE_ID_LIST',REMOVE_ID_LIST)
     print('IMPUTATION_METHOD',IMPUTATION_METHOD)
-    print('myDataDir',myDataDir)
+    print('myDataDir_TRAIN',myDataDir_TRAIN)
+    print('myDataDir_TEST',myDataDir_TEST)
     print('SAMPLING_PERIOD',SAMPLING_PERIOD)
+    
+
     
     #Seed random number generator in case of doing data augmentation:
     np.random.seed(RANDOM_SEED)
     
-    #Load
-    df = load_my_data(myDataDir)
     
-    #Remove any bad/irrelevant cities
-    df = remove_cities(df,REMOVE_ID_LIST)
-    
-    #Put into same format as used by Kaggle, save out csv's    
-    df = format_like_Kaggle(df, myDataDir, IMPUTATION_METHOD, SAMPLING_PERIOD, DO_AUGMENTATION, start_date=START_DATE, end_date=END_DATE)
-
+    #For TRAIN and TEST data
+    modes = ['TRAIN','TEST']
+    for i, myDataDir in enumerate([myDataDir_TRAIN,myDataDir_TEST]):
+        mode=modes[i]
+        print(mode)
+        #Don't do augmentation for test phase [test only on real]
+        if i==1:
+            DO_AUGMENTATION=False
+        
+        #Load
+        df = load_my_data(myDataDir)
+        
+        #Remove any bad/irrelevant cities
+        df = remove_cities(df,REMOVE_ID_LIST)
+        
+        #Put into same format as used by Kaggle, save out csv's    
+        df = format_like_Kaggle(df, mode, myDataDir, IMPUTATION_METHOD, SAMPLING_PERIOD, DO_AUGMENTATION, TRAIN_TEST_SPLIT_DATE, start_date=START_DATE, test_end_date=TEST_END_DATE)
+        
+        print('Finished with ', mode)

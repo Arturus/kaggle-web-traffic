@@ -124,7 +124,7 @@ To do:
 
 2. for weekly. monthly inputs, need to change few places in tensorflow code
 3. Prediction intervals
-4. Architecture improvements: bi enc, dil
+4. Architecture improvements: bi enc, dilated; randomly dilated; randomly dilated with bounds per layer
 4. K step recursive as hybrid of 1step recursive and K step direct
 4. MLP direct multihorizon
 5. custom attention [e.g. position specific]
