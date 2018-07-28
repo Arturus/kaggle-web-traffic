@@ -219,7 +219,7 @@ class InputPipe:
         """
         n_timesteps = self.horizon_window_size + self.history_window_size
         # How much free space we have to choose starting day
-        free_space = self.inp.data_days - n_timesteps - self.back_offset - self.start_offset
+        free_space = self.inp.data_timesteps - n_timesteps - self.back_offset - self.start_offset
         if self.verbose:
             #!!!!!! doesn't really matter since this is just printout, but would need to change for WEEKLY / MONTHLY
             lower_train_start = self.inp.data_start + pd.Timedelta(self.start_offset, 'D')
@@ -433,15 +433,15 @@ class InputPipe:
         self.back_offset = back_offset
         if verbose:
             print("Mode:%s, data days:%d, Data start:%s, data end:%s, features end:%s " % (
-            mode, inp.data_days, inp.data_start, inp.data_end, inp.features_end))
+            mode, inp.data_timesteps, inp.data_start, inp.data_end, inp.features_end))
 
         if mode == ModelMode.TRAIN:
             # reserve horizon_window_size at the end for validation
-            assert inp.data_days - horizon_window_size > horizon_window_size + history_window_size, \
+            assert inp.data_timesteps - horizon_window_size > horizon_window_size + history_window_size, \
                 "Predict+train window length (+predict window for validation) is larger than total number of days in dataset"
             self.start_offset = train_skip_first
         elif mode == ModelMode.EVAL or mode == ModelMode.PREDICT:
-            self.start_offset = inp.data_days - history_window_size - back_offset
+            self.start_offset = inp.data_timesteps - history_window_size - back_offset #!!!!!
             if verbose:
                 train_start = inp.data_start + pd.Timedelta(self.start_offset, 'D')
                 eval_start = train_start + pd.Timedelta(history_window_size, 'D')

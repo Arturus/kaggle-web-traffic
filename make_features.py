@@ -513,7 +513,7 @@ def run():
     
     plain = dict(
         features_times=len(features_times),
-        data_days=len(df.columns),
+        data_timesteps=len(df.columns),
         N_time_series=len(df),
         data_start=data_start,
         data_end=data_end,

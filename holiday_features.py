@@ -69,6 +69,8 @@ def encode_all_holidays__daily(dates_range):
         """
         Encode holiday and shoulders as a spiral:
         Rotation over 2pi, with radius goes from 0 to 1 [on holiday] back to 0
+        
+        Right now assuming symmetric beofre / after shoulders.
         """
         N_real_days = len(dates_range)
         real_min = min(dates_range)

@@ -56,6 +56,14 @@ def mean_smape(true, pred):
 
 
 
+def bias(true, pred):
+    """
+    Check if the forecasts are biased up or down
+    """
+    return np.sum(true - pred) / np.sum(true + pred)
+
+
+
 # =============================================================================
 # 
 # =============================================================================
@@ -79,8 +87,10 @@ paths = [p for p in tf.train.get_checkpoint_state(f'data/cpt/{PARAM_SETTING}').a
 t_preds = []
 for tm in range(Nmodels):
     tf.reset_default_graph()
-    t_preds.append(predict(FEATURES_SET, SAMPLING_PERIOD, paths, build_hparams(PARAM_SETTING_FULL_NAME), back_offset=0, history_window_size=283, horizon_window_size=63,
+    t_preds.append(predict(FEATURES_SET, SAMPLING_PERIOD, paths, build_hparams(PARAM_SETTING_FULL_NAME), history_window_size, horizon_window_size, back_offset=0, 
                     n_models=Nmodels, target_model=tm, seed=2, batch_size=2048, asgd=True))
+#def predict(features_set, sampling_period, checkpoints, hparams, history_window_size, horizon_window_size, return_x=False, verbose=False, back_offset=0, n_models=1,
+#            target_model=0, asgd=False, seed=1, batch_size=1024): #For predict: allow horizon_window_size to be fixed
 
 
 # =============================================================================

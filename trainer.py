@@ -480,9 +480,9 @@ def train(features_set, sampling_period, name, hparams, multi_gpu=False, n_model
 
     def create_model(features_set, sampling_period, scope, index, prefix, seed):
 
-        #Just dummy filler, not important what value
-        history_dummy = 111
-        horizon_dummy = 42
+        #Just dummy filler, not important what value [since in training we will randomly vary these]
+        HISTORY_DUMMY = 111
+        HORIZON_DUMMY = 42
 
         with tf.variable_scope('input') as inp_scope:
             with tf.device("/cpu:0"):
@@ -490,28 +490,28 @@ def train(features_set, sampling_period, name, hparams, multi_gpu=False, n_model
                 pipe = InputPipe(features_set, sampling_period, inp, features=split.train_set, N_time_series=split.train_size,
                                  mode=ModelMode.TRAIN, batch_size=batch_size, n_epoch=None, verbose=verbose,
                                  train_completeness_threshold=train_completeness_threshold,
-                                 predict_completeness_threshold=train_completeness_threshold, history_window_size=history_dummy,
-                                 horizon_window_size=horizon_dummy,
+                                 predict_completeness_threshold=train_completeness_threshold, history_window_size=HISTORY_DUMMY,
+                                 horizon_window_size=HORIZON_DUMMY,
                                  rand_seed=seed, train_skip_first=hparams.train_skip_first,
-                                 back_offset=horizon_dummy if forward_split else 0)
+                                 back_offset=HORIZON_DUMMY if forward_split else 0)
                 inp_scope.reuse_variables()
                 TCT = 0.01
                 if side_split:
                     side_eval_pipe = InputPipe(features_set, sampling_period, inp, features=split.test_set, N_time_series=split.test_size,
                                                mode=ModelMode.EVAL, batch_size=eval_batch_size, n_epoch=None,
-                                               verbose=verbose, horizon_window_size=horizon_dummy,
+                                               verbose=verbose, horizon_window_size=HORIZON_DUMMY,
                                                train_completeness_threshold=TCT, predict_completeness_threshold=0,
-                                               history_window_size=history_dummy, rand_seed=seed, runs_in_burst=eval_batches,
-                                               back_offset=horizon_dummy * (2 if forward_split else 1))
+                                               history_window_size=HISTORY_DUMMY, rand_seed=seed, runs_in_burst=eval_batches,
+                                               back_offset=HORIZON_DUMMY * (2 if forward_split else 1))
                 else:
                     side_eval_pipe = None
                 if forward_split:
                     forward_eval_pipe = InputPipe(features_set, sampling_period, inp, features=split.test_set, N_time_series=split.test_size,
                                                   mode=ModelMode.EVAL, batch_size=eval_batch_size, n_epoch=None,
-                                                  verbose=verbose, horizon_window_size=horizon_dummy,
+                                                  verbose=verbose, horizon_window_size=HORIZON_DUMMY,
                                                   train_completeness_threshold=TCT, predict_completeness_threshold=0,
-                                                  history_window_size=history_dummy, rand_seed=seed, runs_in_burst=eval_batches,
-                                                  back_offset=horizon_dummy)
+                                                  history_window_size=HISTORY_DUMMY, rand_seed=seed, runs_in_burst=eval_batches,
+                                                  back_offset=HORIZON_DUMMY)
                 else:
                     forward_eval_pipe = None
         avg_sgd = asgd_decay is not None
@@ -730,8 +730,8 @@ def train(features_set, sampling_period, name, hparams, multi_gpu=False, n_model
         return np.mean(best_epoch_smape, dtype=np.float64)
 
 
-def predict(features_set, sampling_period, checkpoints, hparams, return_x=False, verbose=False, horizon_window_size=6, back_offset=0, n_models=1,
-            target_model=0, asgd=False, seed=1, batch_size=1024, history_window_size=283): #For predict: allow horizon_window_size to be fixed
+def predict(features_set, sampling_period, checkpoints, hparams, history_window_size, horizon_window_size, return_x=False, verbose=False, back_offset=0, n_models=1,
+            target_model=0, asgd=False, seed=1, batch_size=1024): #For predict: allow horizon_window_size to be fixed
     with tf.variable_scope('input') as inp_scope:
         with tf.device("/cpu:0"):
             inp = VarFeeder.read_vars("data/vars")
@@ -766,7 +766,7 @@ def predict(features_set, sampling_period, checkpoints, hparams, return_x=False,
         pipe.load_vars(sess)
         for checkpoint in checkpoints:
             pred_buffer = []
-            pipe.init_iterator(sess)
+              .init_iterator(sess)
             saver.restore(sess, checkpoint)
             cnt = 0
             while True:
