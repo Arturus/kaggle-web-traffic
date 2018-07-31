@@ -18,8 +18,8 @@ def read_cached(name) -> pd.DataFrame:
     :param name: file name without extension
     :return: file content
     """
-    cached = 'data/%s.pkl' % name
-    sources = ['data/%s.csv' % name, 'data/%s.csv.zip' % name]
+    cached = '%s.pkl' % name
+    sources = ['%s.csv' % name, '%s.csv.zip' % name]
     if os.path.exists(cached):
         return pd.read_pickle(cached)
     else:
@@ -30,7 +30,7 @@ def read_cached(name) -> pd.DataFrame:
                 return df
 
 
-def read_all(data_type,sampling_period) -> pd.DataFrame:
+def read_all(data_type,sampling_period,mode) -> pd.DataFrame:
     """
     Reads source data for training/prediction
     """
@@ -43,17 +43,23 @@ def read_all(data_type,sampling_period) -> pd.DataFrame:
         return df
 
     # Path to cached data
-    path = os.path.join('data', 'all.pkl')
+    if mode=='train':
+        path = os.path.join('data', 'all_TRAIN.pkl')
+    elif mode=='test':
+        path = os.path.join('data', 'all_TEST.pkl')
+        
     if os.path.exists(path):
         df = pd.read_pickle(path)
     else:
-        # Official data
-        filename = f'train_2_{data_type}_{sampling_period}'
+        end = '' if mode=='train' else '_TEST'
+        if data_type=='kaggle':
+            end='' 
+        filename = f'data/train_2_{data_type}_{sampling_period}{end}'
         df = read_file(filename)
         
         if data_type=='kaggle':
             # Scraped data
-            scraped = read_file('2017-08-15_2017-09-11')
+            scraped = read_file(r'data/2017-08-15_2017-09-11')
             # Update last two days by scraped data
             df[pd.Timestamp('2017-09-10')] = scraped['2017-09-10']
             df[pd.Timestamp('2017-09-11')] = scraped['2017-09-11']
@@ -62,6 +68,9 @@ def read_all(data_type,sampling_period) -> pd.DataFrame:
         # Cache result
         df.to_pickle(path)
     return df
+
+
+
 
 ## todo:remove
 #def make_holidays(tagged, start, end) -> pd.DataFrame:
@@ -76,11 +85,11 @@ def read_all(data_type,sampling_period) -> pd.DataFrame:
 #    return result
 
 
-def read_x(start, end, data_type, sampling_period) -> pd.DataFrame:
+def read_x(start, end, data_type, sampling_period, mode) -> pd.DataFrame:
     """
     Gets source data from start to end date. Any date can be None
     """
-    df = read_all(data_type,sampling_period)
+    df = read_all(data_type,sampling_period,mode)
     # User GoogleAnalitycsRoman has really bad data with huge traffic spikes in all incarnations.
     # Wikipedia banned him, we'll ban it too
 #    bad_roman = df.index.str.startswith("User:GoogleAnalitycsRoman")
@@ -172,7 +181,7 @@ def find_start_end(data: np.ndarray):
     return start_idx, end_idx
 
 
-def prepare_data(start, end, valid_threshold, data_type, sampling_period) -> Tuple[pd.DataFrame, pd.DataFrame, np.ndarray, np.ndarray]:
+def prepare_data(start, end, valid_threshold, data_type, sampling_period, mode) -> Tuple[pd.DataFrame, pd.DataFrame, np.ndarray, np.ndarray]:
     """
     Reads source data, calculates start and end of each series, drops bad series, calculates log1p(series)
     :param start: start date of effective time interval, can be None to start from beginning
@@ -181,7 +190,7 @@ def prepare_data(start, end, valid_threshold, data_type, sampling_period) -> Tup
     ratio is less than threshold
     :return: tuple(log1p(series), nans, series start, series end)
     """
-    df = read_x(start, end, data_type, sampling_period)
+    df = read_x(start, end, data_type, sampling_period, mode)
     starts, ends = find_start_end(df.values)
     # boolean mask for bad (too short) series
     page_mask = (ends - starts) / df.shape[1] < valid_threshold
@@ -274,7 +283,8 @@ def normalize(values: np.ndarray):
 
 def run():
     parser = argparse.ArgumentParser(description='Prepare data')
-    parser.add_argument('data_dir')
+    #parser.add_argument('data_dir')
+    parser.add_argument('mode', help="Which mode running in, determines some directories: {'train','test'}")
     
     parser.add_argument('data_type', help="Which data set to use: {'kaggle','ours'}")
     parser.add_argument('sampling_period', help="Sampling period for our data: {'daily','weekly','monthly'}")
@@ -287,10 +297,15 @@ def run():
     parser.add_argument('--corr_backoffset', default=0, type=int, help='Offset for correlation calculation')
     args = parser.parse_args()
 
-    print(args.data_dir, args.data_type, args.features_set)
+
+    if args.mode=='train':
+        data_dir = r"data/vars_TRAIN" 
+    elif args.mode=='test':
+        data_dir = r"data/vars_TEST"
+    print(data_dir, args.data_type, args.features_set)
 
     # Get the data
-    df, nans, starts, ends = prepare_data(args.start, args.end, args.valid_threshold, args.data_type, args.sampling_period)
+    df, nans, starts, ends = prepare_data(args.start, args.end, args.valid_threshold, args.data_type, args.sampling_period, args.mode)
 
     # =============================================================================
     # STATIC FEATURES
@@ -452,12 +467,12 @@ def run():
     elif (args.features_set == 'full') or (args.features_set == 'full_w_context'):
         tensors = dict(
             counts=df,
-            lagged_ix=lagged_ix,
-            page_map=np.zeros(len(df)),#just set to a dummy all 0's
+#            lagged_ix=lagged_ix,
+            page_map=np.zeros(len(df)),#just set to a dummy all 0's  #could also use this place to code 0,1 for real vs. synthetic augmented data... #page_map is only used in "Splitter", which is only for side_split validation option.
             page_ix=df.index.values,#!!!!!! 
 
-            year_autocorr=year_autocorr,
-            quarter_autocorr=quarter_autocorr,
+#            year_autocorr=year_autocorr,
+#            quarter_autocorr=quarter_autocorr,
             count_median=count_median,#this is just the median feature, can put in others too
             count_variance=count_variance,#variance
             #entropy
@@ -528,7 +543,7 @@ def run():
     print(plain.keys())
 
     # Store data to the disk
-    VarFeeder(args.data_dir, tensors, plain)
+    VarFeeder(data_dir, tensors, plain)
 
 
 if __name__ == '__main__':

@@ -413,7 +413,7 @@ def train(features_set, sampling_period, name, hparams, multi_gpu=False, n_model
         tf.set_random_seed(seed)
 
     with tf.device("/cpu:0"):
-        inp = VarFeeder.read_vars("data/vars")
+        inp = VarFeeder.read_vars("data/vars_TRAIN")
         if side_split:
             splitter = Splitter(page_features(inp, features_set), inp.page_map, 3, train_sampling=train_sampling,
                                 test_sampling=eval_sampling, seed=seed)
@@ -730,16 +730,31 @@ def train(features_set, sampling_period, name, hparams, multi_gpu=False, n_model
         return np.mean(best_epoch_smape, dtype=np.float64)
 
 
-def predict(features_set, sampling_period, checkpoints, hparams, history_window_size, horizon_window_size, return_x=False, verbose=False, back_offset=0, n_models=1,
+def predict(features_set, sampling_period, checkpoints, TEST_dir, hparams, history_window_size, horizon_window_size, return_x=False, verbose=False, back_offset=0, n_models=1,
             target_model=0, asgd=False, seed=1, batch_size=1024): #For predict: allow horizon_window_size to be fixed
     with tf.variable_scope('input') as inp_scope:
         with tf.device("/cpu:0"):
-            inp = VarFeeder.read_vars("data/vars")
+#            inp = VarFeeder.read_vars("data/vars")
+            inp = VarFeeder.read_vars(TEST_dir)
+#            tf.Print(inp,['inp.counts',inp.counts])
+            print(inp)
+#            try:
+#            
+#            except:
+#                pass
             pipe = InputPipe(features_set, sampling_period, inp, page_features(inp, features_set), inp.N_time_series, mode=ModelMode.PREDICT, batch_size=batch_size,
-                             train_completeness_threshold=0.01,
+                             #train_completeness_threshold=0.01,
+                             train_completeness_threshold=1.0,
                              horizon_window_size=horizon_window_size,
-                             predict_completeness_threshold=0.0, history_window_size=history_window_size,#hparams.history_window_size,
+                             predict_completeness_threshold=0.0, history_window_size=history_window_size,
                              back_offset=back_offset)
+            
+            print('pipe.time_x',pipe.time_x)
+            _ = tf.where(tf.is_nan(pipe.time_x))
+            #pipe.time_x = tf.Print(pipe.time_x, ['where NANs in inp.time_x :', tf.shape(_), _, _[0], _[1], _[2], _[-3], _[-2], _[-1]])
+#            pipe.time_x = tf.Print(pipe.time_x, ['where NANs in inp.time_x :', tf.shape(_), _])
+            pipe.time_x = tf.check_numerics(pipe.time_x,'pipe.time_x has NANs')            
+            
     asgd_decay = 0.99 if asgd else None
     if n_models == 1:
         model = Model(pipe, hparams, is_train=False, seed=seed, asgd_decay=asgd_decay)
@@ -765,55 +780,50 @@ def predict(features_set, sampling_period, checkpoints, hparams, history_window_
     with tf.Session(config=tf.ConfigProto(gpu_options=tf.GPUOptions(allow_growth=True))) as sess:
         pipe.load_vars(sess)
         for checkpoint in checkpoints:
+            print('checkpoint',checkpoint)
             pred_buffer = []
-              .init_iterator(sess)
+            pipe.init_iterator(sess)
             saver.restore(sess, checkpoint)
-            cnt = 0
-            while True:
-                try:
-                    if return_x:
-                        pred, x, pname = sess.run([model.predictions, model.inp.true_x, model.inp.page_ix])
-                    else:
-                        pred, pname = sess.run([model.predictions, model.inp.page_ix])
+            
+            if return_x:
+                pred, x, pname = sess.run([model.predictions, model.inp.true_x, model.inp.page_ix])
+#                print('pred',pred)
+#                print('x',x)
+#                print('pname',pname)
+            else:
+                pred, pname = sess.run([model.predictions, model.inp.page_ix])
 
-                    #Our data already has page names (id's) as ints, so this decoding won't work, so just do str(id)
-                    try:
-                        utf_names = [str(name, 'utf-8') for name in pname]
-                    except UnicodeDecodeError:
-                        utf_names = [str(name) for name in pname]
-                        
-                    pred_df = pd.DataFrame(index=utf_names, data=np.expm1(pred))
-                    print(pred_df)
-                    
-                    pred_buffer.append(pred_df)
-                    if return_x:
-                        # noinspection PyUnboundLocalVariable
-                        x_values = pd.DataFrame(index=utf_names, data=np.round(np.expm1(x)).astype(np.int64))
-                        x_buffer.append(x_values)
-                    newline = cnt % 80 == 0
-                    if cnt > 0:
-                        print('.', end='\n' if newline else '', flush=True)
-                    if newline:
-                        print(cnt, end='')
-                    cnt += 1
-                except tf.errors.OutOfRangeError:
-                    print('🎉')
-                    break
+            #Our data already has page names (id's) as ints, so this decoding won't work, so just do str(id)
+            try:
+                utf_names = [str(name, 'utf-8') for name in pname]
+            except UnicodeDecodeError:
+                utf_names = [str(name) for name in pname]
+                
+            pred_df = pd.DataFrame(index=utf_names, data=np.expm1(pred))
+#            print(pred_df)
+#            print()
+            pred_buffer.append(pred_df)
+            if return_x:
+                # noinspection PyUnboundLocalVariable
+                x_values = pd.DataFrame(index=utf_names, data=np.round(np.expm1(x)).astype(np.int64))
+                x_buffer.append(x_values)
+            
+            
             cp_predictions = pd.concat(pred_buffer)
             if predictions is None:
                 predictions = cp_predictions
             else:
                 predictions += cp_predictions
     predictions /= len(checkpoints) #Since it is averaging predictions over the chckpoints
-    offset = pd.Timedelta(back_offset, 'D') #!!!!!!!!!!!! need to change these lines when sampling WEEKLY MONTHLY
-    start_prediction = inp.data_end + pd.Timedelta('1D') - offset
+    
+    #!!!!!!!!!!!! need to change these lines when sampling WEEKLY MONTHLY
+    start_prediction = inp.data_end + pd.Timedelta('1D') - pd.Timedelta(back_offset, 'D')
     end_prediction = start_prediction + pd.Timedelta(horizon_window_size - 1, 'D')
     predictions.columns = pd.date_range(start_prediction, end_prediction)
     if return_x:
         x = pd.concat(x_buffer)
-        #start_data = inp.data_end - pd.Timedelta(hparams.history_window_size - 1, 'D') - back_offset
-        start_data = inp.data_end - pd.Timedelta(history_window_size - 1, 'D') - back_offset #!!!!!now for heatmaps
-        end_data = inp.data_end - back_offset
+        start_data = inp.data_end - pd.Timedelta(history_window_size - 1, 'D') - pd.Timedelta(back_offset, 'D')
+        end_data = inp.data_end - pd.Timedelta(back_offset, 'D')
         x.columns = pd.date_range(start_data, end_data)
         return predictions, x
     else:

@@ -88,8 +88,17 @@ def make_encoder(time_inputs, encoder_features_depth, is_train, hparams, seed, t
                    dropout=hparams.encoder_dropout if is_train else 0, seed=seed)
 
     static_p_size = cuda_params_size(build_rnn)
+#    static_p_size = tf.Print(static_p_size,['static_p_size',static_p_size])
     cuda_model = build_rnn()
+    
+    
+#    time_inputs = tf.check_numerics(time_inputs,'time_inputs')
+
+    
+    
     params_size_t = cuda_model.params_size()
+#    params_size_t = tf.Print(static_p_size,['params_size_t',params_size_t])
+#    print('params_size_t',params_size_t)
     with tf.control_dependencies([tf.assert_equal(params_size_t, [static_p_size])]):
         cuda_params = tf.get_variable("cuda_rnn_params",
                                       initializer=tf.random_uniform([static_p_size], minval=-0.05, maxval=0.05,
@@ -97,7 +106,7 @@ def make_encoder(time_inputs, encoder_features_depth, is_train, hparams, seed, t
                                       )
 
     def build_init_state():
-        batch_len = tf.shape(time_inputs)[0]
+        batch_len = tf.shape(time_inputs)[0] #!!!!!!!! for random history/horizon size, may need to adjust
         return tf.zeros([hparams.encoder_rnn_layers, batch_len, hparams.rnn_depth], dtype=tf.float32)
 
     input_h = build_init_state()
@@ -105,6 +114,10 @@ def make_encoder(time_inputs, encoder_features_depth, is_train, hparams, seed, t
     # [batch, time, features] -> [time, batch, features]
     time_first = tf.transpose(time_inputs, [1, 0, 2])
     rnn_time_input = time_first
+    
+    
+#    cuda_params = tf.Print(cuda_params,['cuda_params',tf.shape(cuda_params),cuda_params]) #???? shape is [233892]
+    
     model = partial(cuda_model, input_data=rnn_time_input, input_h=input_h, params=cuda_params)
     if RNN == tf.contrib.cudnn_rnn.CudnnLSTM:
         rnn_out, rnn_state, c_state = model(input_c=build_init_state())
@@ -113,6 +126,16 @@ def make_encoder(time_inputs, encoder_features_depth, is_train, hparams, seed, t
         c_state = None
     if transpose_output:
         rnn_out = tf.transpose(rnn_out, [1, 0, 2])
+        
+    
+    #Need to check for NANs that are sometimes happening
+    rnn_out = tf.check_numerics(rnn_out,'rnn_out')    
+    rnn_state = tf.check_numerics(rnn_state,'rnn_state')
+
+        
+#    rnn_out = tf.Print(rnn_out,['rnn_out',rnn_out])
+#    rnn_state = tf.Print(rnn_state,['rnn_state',rnn_state,'encoder_features_depth',encoder_features_depth])
+#    encoder_features_depth = tf.Print(encoder_features_depth,['encoder_features_depth',encoder_features_depth])
     return rnn_out, rnn_state, c_state
 
 
@@ -351,9 +374,14 @@ def convert_cudnn_state_v3(h_state, hparams, seed, c_state=None, dropout=1.0):
     # encoder_layers < decoder_layers: feed encoder outputs to lower decoder layers, feed zeros to top layers
     h_layers = tf.unstack(h_state)
     
+#    h_layers = tf.Print(h_layers,['h_layers',h_layers])
+    
     #Regardless of relative number of layers in encoder vs. decoder, simple approach is 
     #use topmost encoder layer hidden state as the (fixed) context
     encoded_representation = wrap_dropout(h_layers[-1])
+    
+#    encoded_representation = tf.Print(encoded_representation,['encoded_representation',encoded_representation])
+    
     #above uses a different random dropout for the "encoded representaiton" than the actual top level output.
     #This is possibly a good regularization thing since we dont expect the final hidden state to be  perfect summar/context vector,
     #so a little randomness is probably good here.
@@ -416,8 +444,18 @@ class Model:
         self.lookback_K_actual = min(hparams.LOOKBACK_K, hparams.history_window_size_minmax[0])
         print('self.lookback_K_actual',self.lookback_K_actual)
 
+
+#        inp.time_x = tf.Print(inp.time_x, ['where NANs in inp.time_x :', tf.where(tf.is_nan(inp.time_x))])
+#        inp.time_x = tf.check_numerics(inp.time_x,'inp.time_x has NANs')
+
+
+
         encoder_output, h_state, c_state = make_encoder(inp.time_x, inp.encoder_features_depth, is_train, hparams, seed,
                                                         transpose_output=False)
+        
+#        h_state = tf.Print(h_state,['h_state',h_state,'encoder_output',encoder_output,'inp.time_x',inp.time_x])
+        
+        
         # Encoder activation losses
         enc_stab_loss = rnn_stability_loss(encoder_output, hparams.encoder_stability_loss / inp.history_window_size)
         enc_activation_loss = rnn_activation_loss(encoder_output, hparams.encoder_activation_loss / inp.history_window_size)
@@ -447,6 +485,12 @@ class Model:
                                                         attn_features if hparams.use_attn else None,
                                                         summary_z if hparams.RECURSIVE_W_ENCODER_CONTEXT else None,
                                                         inp.time_y, inp.norm_x[:, -self.lookback_K_actual:]) #in decoder function def:   inp.time_y = "prediction_inputs";  inp.norm_x[:, -1] = "previous_y" (i.e. the final x normalizd))
+        
+        
+#        decoder_targets = tf.Print(decoder_targets,['encoder_state',encoder_state,'inp.time_y',inp.time_y,'inp.norm_x',inp.norm_x])
+#        decoder_targets = tf.Print(decoder_targets,['decoder_targets',decoder_targets,'decoder_outputs',decoder_outputs])
+        
+        
         # Decoder activation losses
         dec_stab_loss = rnn_stability_loss(decoder_outputs, hparams.decoder_stability_loss / inp.horizon_window_size)
         dec_activation_loss = rnn_activation_loss(decoder_outputs, hparams.decoder_activation_loss / inp.horizon_window_size)
