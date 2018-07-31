@@ -13,6 +13,8 @@ import hparams
 
 from make_features import read_all
 
+import pickle
+import time
 
 
 
@@ -20,8 +22,8 @@ from make_features import read_all
 # 
 # =============================================================================
 #For histories, we care most about shorter series, so sample lower numbers more densely
-HISTORY_SIZES=[7,350]#[7,8,10,15,20,25,35,50,70,100,150,250,350]
-HORIZON_SIZES=[7,60]#[7,10,20,30,40,50,60]
+HISTORY_SIZES=[7,8,10,12,15,20,30,50,70,100,150,250,366]
+HORIZON_SIZES=[7,10,20,30,40,50,60]
 EVAL_STEP_SIZE=4#step size for evaluation. 1 means use every single day as a FCT to evaluate on. E.g. 3 means step forward 3 timesteps between each FCT to evaluate on.
 
 # =============================================================================
@@ -67,11 +69,18 @@ def mean_smape(true, pred):
     masked_smape = np.ma.array(raw_smape, mask=np.isnan(raw_smape))
     return masked_smape.mean()
 
-def mean_bias(true, pred):
+def bias(true, pred):
     """
     Check if the forecasts are biased up or down
     """
-    return np.mean(np.sum(true - pred) / np.sum(true + pred))
+    summ = true + pred
+    bias = np.where(summ == 0, 0, (true - pred) / summ)
+    return 100. * bias
+
+def mean_bias(true, pred):
+    raw_bias = bias(true, pred)
+    masked_bias = np.ma.array(raw_bias, mask=np.isnan(raw_bias))
+    return raw_bias.mean()
 
 
     
@@ -91,6 +100,7 @@ def do_predictions_one_setting(history,horizon,backoffset,TEST_dir,save_plots,n_
     
 
     batchsize = n_series #For simplicity, just do all series at once if not too many for memory
+    print('batchsize',batchsize)
     # =============================================================================
     # 
     # =============================================================================
@@ -201,7 +211,11 @@ if __name__ == '__main__':
     print('TEST_DF_PATH',TEST_DF_PATH)
 
     groundtruth = pd.read_csv(TEST_DF_PATH)
+#    print('groundtruth',groundtruth)
     groundtruth.sort_values(['Page'])    
+    print('groundtruth',groundtruth)
+#    print(groundtruth[groundtruth['Page']==1])
+
     
     data_timesteps, N_series = get_data_timesteps_Nseries(TEST_DF_PATH)
     
@@ -209,6 +223,7 @@ if __name__ == '__main__':
 #    hist_horiz__real_only = {}
 #    hist_horiz__dayofweek = {}
 #    hist_horiz__holidays = {}
+    t0 = time.clock()
     for history in HISTORY_SIZES:
         for horizon in HORIZON_SIZES:
             print('HISTORY ',history, 'of ', HISTORY_SIZES)
@@ -220,25 +235,34 @@ if __name__ == '__main__':
             for backoffset in offs:
                 print('backoffset ',backoffset, 'of ', offs)
                 f_preds = do_predictions_one_setting(history,horizon,backoffset,TEST_dir,SAVE_PLOTS,N_series)
-                print(f_preds)
+#                print(f_preds)
+                #!!!! save out the set of predictions as excel multiple sheets
+                #savename = f"{history}_{horizon}.xlsx"
+                #each sheet is for a single backoffset, so each sheet contains all ~1800 id's
                 
-                dates = f_preds.columns
+                dates = [i.strftime('%Y-%m-%d') for i in f_preds.columns]
                 print(dates)
                 
                 #For each series
-                inds = f_preds.index.values
-                for i, series in enumerate(f_preds):
-                    _id = inds[i]
-                    true = groundtruth.loc[groundtruth['Page']==_id]
-                    true = true.loc[true.isin(groundtruth)]
-                    print(true)
+#                inds = f_preds.index.values
+#                print('inds',inds)
+                for i in range(len(f_preds)):
+                    series = f_preds.iloc[i]
+                    _id = series.name
+                    true = groundtruth[groundtruth['Page'].astype(str) ==_id]
+#                    print('true',true)
+                    true = true[dates].values[0]
                     #Get smape, mae, bias over this prediction
-                    smape = mean_smape(true, series.values)
+                    smp = mean_smape(true, series.values)
 #                    mae = asdasdasd
-                    bias = mean_bias(true, series.values)                    
-                    hist_horiz__all[(history,horizon,backoffset,seris)] = {'SMAPE':smape, 'MAE':0, 'bias':bias}
-                
-
+                    bi = mean_bias(true, series.values)
+#                    print(smape,bias)
+                    hist_horiz__all[(history,horizon,backoffset,_id)] = {'SMAPE':smp, 
+                                    'bias':bi,
+                                    #'MAE':mae,
+                                    'predict_start_date':dates[0],
+                                    'predict_end_date':dates[-1]}
+#                    print(hist_horiz__all)
                 
                 #Care about the metrics within different partitions:
                 #Beside just history and horizon size, also consider:
@@ -246,8 +270,11 @@ if __name__ == '__main__':
                 #training ID vs. new ID only in TEST set
                 #series contains holiday vs. only non-holidays
                 #day of week
-                
-                
-                
-                print('f_preds',f_preds)
-                print('\n'*10)
+    
+    t1 = time.clock()
+    print('elapsed time: ',t1-t0)
+    #Now that all metrics stored in dict, save dict, and analyze further
+    #pickle ... hist_horiz__all
+#    print(hist_horiz__all)
+    with open(r"hist_horiz__all.pickle", "wb") as outp:
+        pickle.dump(hist_horiz__all, outp)
