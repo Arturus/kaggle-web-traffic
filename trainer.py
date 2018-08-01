@@ -743,8 +743,7 @@ def predict(features_set, sampling_period, checkpoints, TEST_dir, hparams, histo
 #            except:
 #                pass
             pipe = InputPipe(features_set, sampling_period, inp, page_features(inp, features_set), inp.N_time_series, mode=ModelMode.PREDICT, batch_size=batch_size,
-                             #train_completeness_threshold=0.01,
-                             train_completeness_threshold=1.0,
+                             train_completeness_threshold=0.01,
                              horizon_window_size=horizon_window_size,
                              predict_completeness_threshold=0.0, history_window_size=history_window_size,
                              back_offset=back_offset)
