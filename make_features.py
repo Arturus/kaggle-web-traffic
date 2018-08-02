@@ -291,7 +291,7 @@ def run():
     parser.add_argument('features_set', help="Which set of features to use. His default for Kaggle vs. one of my custom sets: {'arturius','simple','full','full_w_context'}")
 
     parser.add_argument('--valid_threshold', default=0.0, type=float, help="Series minimal length threshold (pct of data length)")
-    parser.add_argument('--add_days', default=64, type=int, help="Add N days in a future for prediction")
+    parser.add_argument('--add_days', default=0, type=int, help="Add N days in a future for prediction")
     parser.add_argument('--start', help="Effective start date. Data before the start is dropped")
     parser.add_argument('--end', help="Effective end date. Data past the end is dropped")
     parser.add_argument('--corr_backoffset', default=0, type=int, help='Offset for correlation calculation')

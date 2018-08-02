@@ -125,6 +125,14 @@ class FakeSplitter:
 
 
 class InputPipe:
+#    def randomize_window_sizes(self, *args):
+#        self.horizon_window_size = tf.random_uniform((), 7, 60, dtype=tf.int32)
+#        self.history_window_size = tf.random_uniform((), 7, 366, dtype=tf.int32)
+#        self.attn_window = self.history_window_size - self.horizon_window_size + 1
+#        self.max_train_empty = tf.cast(tf.round(tf.multiply(tf.cast(self.history_window_size,tf.float32),(1 - self.train_completeness_threshold))),tf.int32)
+#        self.max_predict_empty = tf.cast(tf.round(tf.multiply(tf.cast(self.horizon_window_size,tf.float32),(1 - self.predict_completeness_threshold))),tf.int32)
+#        return args
+        
     def cut(self, counts, start, end):
         """
         Cuts [start:end] diapason from input data
@@ -133,6 +141,7 @@ class InputPipe:
         :param end: end index
         :return: tuple (train_counts, test_counts, lagged_counts, [subset of: dow,woy,moy,doy,year,holidays])
         """
+        
         # Pad counts to ensure we have enough array length for prediction
         counts = tf.concat([counts, tf.fill([self.horizon_window_size], np.NaN)], axis=0)
         cropped_count = counts[start:end]
@@ -224,6 +233,15 @@ class InputPipe:
         :param args: pass-through data, will be appended to result
         :return: result of cut() + args
         """
+#        def randomize_window_sizes():#, *args):
+#            self.horizon_window_size = tf.random_uniform((), 7, 60, dtype=tf.int32)
+#            self.history_window_size = tf.random_uniform((), 7, 366, dtype=tf.int32)
+#            self.attn_window = self.history_window_size - self.horizon_window_size + 1
+#            self.max_train_empty = tf.cast(tf.round(tf.multiply(tf.cast(self.history_window_size,tf.float32),(1 - self.train_completeness_threshold))),tf.int32)
+#            self.max_predict_empty = tf.cast(tf.round(tf.multiply(tf.cast(self.horizon_window_size,tf.float32),(1 - self.predict_completeness_threshold))),tf.int32)
+#            #return args        
+#        randomize_window_sizes()        
+        
         n_timesteps = self.horizon_window_size + self.history_window_size
         # How much free space we have to choose starting day
         free_space = self.inp.data_timesteps - n_timesteps - self.back_offset - self.start_offset
@@ -468,8 +486,12 @@ class InputPipe:
         self.history_window_size = history_window_size #!!!!!!!!!!!random resize
         self.horizon_window_size = horizon_window_size#!!!!!!!!!!!random resize
         self.attn_window = history_window_size - horizon_window_size + 1#!!!!!!!!!!!random resize
-        self.max_train_empty = int(round(history_window_size * (1 - train_completeness_threshold)))#!!!!!!!!!!!random resize
-        self.max_predict_empty = int(round(horizon_window_size * (1 - predict_completeness_threshold)))#!!!!!!!!!!!random resize
+        #For train empty, if max_train_empty=history, then on data with many missing values, 
+        #you can get all NAN series, which then causes NANs in inp.time_x and 
+        #destroys the encoded_state and kills everything. You need to have at 
+        #least 1 valid value in the history window, so do min(history-1, xxxxx)
+        self.max_train_empty = min(history_window_size-1, int(np.floor(history_window_size * (1 - train_completeness_threshold))))
+        self.max_predict_empty = int(np.floor(horizon_window_size * (1 - predict_completeness_threshold)))
         self.mode = mode
         self.verbose = verbose
         
@@ -490,8 +512,8 @@ class InputPipe:
             self.history_window_size = history
             self.horizon_window_size = horizon
             self.attn_window = history - horizon + 1
-            self.max_train_empty = int(round(history * (1 - self.train_completeness_threshold)))
-            self.max_predict_empty = int(round(horizon * (1 - self.predict_completeness_threshold)))
+            self.max_train_empty = min(history_window_size-1, int(np.floor(history_window_size * (1 - train_completeness_threshold))))
+            self.max_predict_empty = int(np.floor(horizon * (1 - self.predict_completeness_threshold)))
     
     
         
@@ -505,8 +527,9 @@ class InputPipe:
         print('features',features)
     
     
-#        for _ in range(max(n_epoch,20)):
-##            random_draw_new_window_sizes()
+#        for _ in range(10):#max(n_epoch,20)):
+#            print('\n'*5)
+#            random_draw_new_window_sizes()
 #            print('max_train_empty',self.max_train_empty)
 #            print('max_predict_empty',self.max_predict_empty)
 #            print('history_window_size',self.history_window_size)
@@ -535,9 +558,10 @@ class InputPipe:
 #            batch = batch.prefetch(runs_in_burst * 2)
 #            print('batch P', batch)
 #            batch = (batch)
-        
+
         root_ds = tf.data.Dataset.from_tensor_slices(tuple(features)).repeat(n_epoch)
         batch = (root_ds
+#                 .map(self.randomize_window_sizes)
                  .map(cutter[mode])
                  .filter(self.reject_filter)
                  .map(self.make_features, num_parallel_calls=num_threads)
@@ -549,6 +573,8 @@ class InputPipe:
         print(batch)
         self.iterator = batch.make_initializable_iterator()
         it_tensors = self.iterator.get_next()
+#        print('self.iterator',self.iterator)
+#        print('it_tensors',it_tensors)
 
         # Assign all tensors to class variables
         #self.time_x is the tensor of features, regardless of which feature set, so this can stay same.
@@ -559,10 +585,10 @@ class InputPipe:
             self.true_x, self.time_x, self.norm_x, self.true_y, self.time_y, self.norm_y, self.norm_mean, \
             self.norm_std, self.series_features, self.page_ix = it_tensors
         print('self.true_x', self.true_x)
+#        self.true_x = tf.Print(self.true_x,['self.true_x',self.true_x])
         print('self.time_x', self.time_x)
 #        print('self.time_y', self.time_y)
 #        self.time_y = tf.Print(self.time_y,['self.time_y',self.time_y])
-        
         """if self.features_set=='simple':
             pass
 #        if self.features_set=='full':

@@ -69,12 +69,12 @@ rm *.pkl
 cd ..
 ll data/
 
-python3 make_features.py train ours daily full
-python3 make_features.py test ours daily full
+python3 make_features.py train ours daily full --add_day=0
+python3 make_features.py test ours daily full --add_days=0
 
 #python3 make_features.py data/vars kaggle daily full --add_days=63
 
-python3 trainer.py full daily --name s32 --hparam_set=s32 --n_models=3 --asgd_decay=0.99 --max_steps=11500 --save_from_step=3 --patience=5 --max_epoch=15 --save_epochs_performance
+python3 trainer.py full daily --name s32 --hparam_set=s32 --n_models=3 --asgd_decay=0.99 --max_steps=11500 --save_from_step=3 --patience=5 --max_epoch=25 --save_epochs_performance
 
 python3 RUN_ALL_PREDICTIONS.py
 

@@ -22,9 +22,9 @@ from pandas import ExcelWriter
 # 
 # =============================================================================
 #For histories, we care most about shorter series, so sample lower numbers more densely
-HISTORY_SIZES=[200,300]#[7,8,10,12,15,20,30,50,70,100,150,250,366]
-HORIZON_SIZES=[80,150]#[7,10,20,30,40,50,60]
-EVAL_STEP_SIZE=60#step size for evaluation. 1 means use every single day as a FCT to evaluate on. E.g. 3 means step forward 3 timesteps between each FCT to evaluate on.
+HISTORY_SIZES=[7,8,50]#[7,8,10,12,15,20,30,50,70,100,150,250,366]
+HORIZON_SIZES=[30,60]#[7,10,20,30,40,50,60]
+EVAL_STEP_SIZE=4#step size for evaluation. 1 means use every single day as a FCT to evaluate on. E.g. 3 means step forward 3 timesteps between each FCT to evaluate on.
 
 # =============================================================================
 # PARAMETRS
