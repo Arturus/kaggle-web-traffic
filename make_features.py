@@ -346,20 +346,52 @@ def run():
         encoded_page_features = encode_page_features(page_features)
 
 
-    #To get idea of overall scale of a time series, to compare between time series, which would be lost if just used standard scaled values:
-    count_median = df.median(axis=1)
-    count_median = normalize(count_median)
-    #Play around w a few other basic summary stats
+#    #To get idea of overall scale of a time series, to compare between time series, which would be lost if just used standard scaled values:
+#    count_median = df.median(axis=1)
+#    count_median = normalize(count_median)
+#    #Play around w a few other basic summary stats
+#    percentiles = []
+#    for pctl in [0,5,25,75,95,100]:
+#        percentiles.append(normalize(np.percentile(df.values,pctl,axis=1)))
+#    count_variance = normalize(np.var(df.values,axis=1))
+#    #entropy = normalize(entropy(df.values,axis=1))
+#    #filled_len = df.values.shape[1] - np.count_nonzero(np.isnan(df.values),axis=1) #non-nans
+#    #series_length = (df.values>0).sum(axis=1) #actually it has already been log transofmred so this is not correct
+#
+    #!!!! Seems like the above way Kaggle does it is kind of against best practices [seems to use ~TEST set information to create features,
+    #in terms of how it does a whole series median, e.g., but at any given prediction, that would contribute to the median...]
+    #Better: use e.g. 1st 7 observations to get median, etc. features, since 7 is min history size.
+    #This is a lot more fair. Technixally, even this is ~cheating because depending on train_complete_threshold the model may have
+    #to make a prediction after seeing as few as 1 observation, so using first 7 is potentially unfair as well, depending on TCT.
+    #But is OK, and especially since most series esp. those we care about, will not have such bad missing.
+    MIN_HIST = 7
+    count_median = []
+    percs = [0,5,25,75,95,100]
+#    percentiles = np.zeros((len(df),len(percs)))
     percentiles = []
-    for pctl in [0,5,25,75,95,100]:
-        percentiles.append(normalize(np.percentile(df.values,pctl,axis=1)))
-    count_variance = normalize(np.var(df.values,axis=1))
-    #entropy = normalize(entropy(df.values,axis=1))
-    #filled_len = df.values.shape[1] - np.count_nonzero(np.isnan(df.values),axis=1) #non-nans
-    #series_length = (df.values>0).sum(axis=1) #actually it has already been log transofmred so this is not correct
-
-
-
+    count_variance = []
+    for rr in range(len(df)):
+        _ = df.iloc[rr].values
+        gg = np.where(_>0.)[0]
+        if gg.size>MIN_HIST-1:
+            #last_ind = gg[max(MIN_HIST-1,gg.size)]
+            last_ind = gg[MIN_HIST-1]
+            v = _[:last_ind][(_[:last_ind])>0.]
+            count_median.extend([np.nanmedian(v)])
+            p = []
+            for pctl in percs:
+                p.extend([np.percentile(v,pctl)])
+            percentiles.append(p)
+            count_variance.extend([np.nanvar(v)])
+        else:
+            #If the entire time series has fewer than MIN_HIST-1 valid values, just put in 0, won't matter because this series wouldn't be included anyway since so few values it shouldn't pass filter.
+            count_median.extend([0.])
+            percentiles.append([0.]*len(percs))
+            count_variance.extend([0.])
+    count_median = normalize(np.array(count_median))
+    percentiles = [normalize(np.array(percentiles)[:,rr]) for rr in range(len(percs))]
+    count_variance = normalize(np.array(count_variance))
+    
     # =============================================================================
     # TIME-VARYING FEATURES
     # =============================================================================

@@ -14,7 +14,7 @@ from input_pipe import InputPipe, ModelMode
 
 GRAD_CLIP_THRESHOLD = 10
 RNN = cudnn_rnn.CudnnGRU
-# RNN = tf.contrib.cudnn_rnn.CudnnLSTM
+#RNN = tf.contrib.cudnn_rnn.CudnnLSTM
 # RNN = tf.contrib.cudnn_rnn.CudnnRNNRelu
 
 
@@ -78,23 +78,20 @@ def make_encoder(time_inputs, encoder_features_depth, is_train, hparams, seed, t
     :param transpose_output: Transform RNN output to batch-first shape
     :return:
     """
-
+    DIRECTION = 'unidirectional'#'bidirectional',#'unidirectional', #Let's try bidirectional as well, or ,ay as well try keeping unidirectional but with order reversed, just see what happens
     def build_rnn():
         return RNN(num_layers=hparams.encoder_rnn_layers, num_units=hparams.rnn_depth,
                    input_size=encoder_features_depth,
-                   direction='unidirectional', #Let's try bidirectional as well, or ,ay as well try keeping unidirectional but with order reversed, just see what happens
+                   direction=DIRECTION,
                    #assume merge mode default is concat??
                    #need to fix dimensions error. If could change merge mode to sum or mean or something then at least output dimension is same so might be easiest way to avoid  error ?
                    dropout=hparams.encoder_dropout if is_train else 0, seed=seed)
 
     static_p_size = cuda_params_size(build_rnn)
 #    static_p_size = tf.Print(static_p_size,['static_p_size',static_p_size])
+#    print('static_p_size',static_p_size)
     cuda_model = build_rnn()
-    
-    
 #    time_inputs = tf.check_numerics(time_inputs,'time_inputs')
-
-    
     
     params_size_t = cuda_model.params_size()
 #    params_size_t = tf.Print(static_p_size,['params_size_t',params_size_t])
@@ -108,6 +105,12 @@ def make_encoder(time_inputs, encoder_features_depth, is_train, hparams, seed, t
     def build_init_state():
         batch_len = tf.shape(time_inputs)[0] #!!!!!!!! for random history/horizon size, may need to adjust
         return tf.zeros([hparams.encoder_rnn_layers, batch_len, hparams.rnn_depth], dtype=tf.float32)
+#    def build_init_state():
+#        batch_len = tf.shape(time_inputs)[0] #!!!!!!!! for random history/horizon size, may need to adjust
+#        if DIRECTION == 'unidirectional':
+#            return tf.zeros([1, hparams.encoder_rnn_layers, batch_len, hparams.rnn_depth], dtype=tf.float32)
+#        if DIRECTION == 'bidirectional':
+#            return tf.zeros([2, hparams.encoder_rnn_layers, batch_len, hparams.rnn_depth], dtype=tf.float32)        
 
     input_h = build_init_state()
 
@@ -190,6 +193,56 @@ def make_fingerprint(x, is_train, fc_dropout, seed):
             fc_encoder = tf.layers.dense(cnn_out, 512, activation=selu, name='fc_encoder')
             out_encoder = tf.layers.dense(fc_encoder, 16, activation=selu, name='out_encoder')
     return out_encoder
+
+
+
+def MLP_postprocess(decoder_outputs, decoder_inputs, kernel_size, kernel_offset, seed):
+    """
+    As a postprocess decoder step:
+    
+    After the decoder has output predictions for each decoder timestep 
+    (in standard mode this is a vector of predictions: one per timestep
+    vs. if doing quantile regression, is a matrix timesteps x quantiles...)
+    
+    Refine those predictions by taking into account the neighboring predictions.
+    Ideally, the RNN/LSTM/GRU state would contain all necessary information about state 
+    to make good predictions. In reality, might be asking too much, could be useful 
+    to do a second pass over the outputs to improve predictions.
+    
+    E.g. if encoding shock events: binary 0,1 with 1 on change day:
+    if there is no pre-event shoulder, no information on Monday takes advantage 
+    of known change about to ocur on Tuesday. This postprocessor will help with that.
+    
+    kernel_size - int
+    The size, in #timesteps, of the MLP postprocess kernel.
+    For a given timestep of decoder, a window containing that day is used to 
+    hard select which nearby timesteps are allowed to contribute to refinement 
+    for that timestep. I.e. bigger kernel means looking at more nearby RNN outputs.
+
+    kernel_offset - int
+    The offset, in #timesteps, of the MLP postprocess kernel from the given timestep under consideration.
+    0 offset means kernel has rightmost index exactly on the given timestep,
+    1 offset means the rightmost timestep included in the postprocess window is 
+    the timestep exactly 1 position right of the timestep under consideration, ..., 
+    ...
+    K-1 is when the kernel window is trasnlated as far as possible to the right,
+    i.e. has the given timestep as the LEFTmost position, and K-1 positions to the right of the day in question.
+    In other words, offset tells you how many positions to the right of the given timestep are included in the kernel window.
+    
+    For this mini feedforward net, just use 1 hidden layer with nonlinearity, and for #of nodes there, just make it half of #input nodes to this MLP.
+    """
+#    with tf.variable_scope("MLP_postprocess"):
+#        with tf.variable_scope('mlp',
+#                               initializer=layers.variance_scaling_initializer(factor=1.0, mode='FAN_IN', seed=seed)):
+#            flattend_input = tf.concat([asdasd,asd,asd])
+#            decoder_outs_windowed, decoder_ins__windowed = asdasdasd func of kernel sizes...
+#            N_nodes = 
+#            fc_encoder = tf.layers.dense(cnn_out, 512, activation=selu, name='fc_encoder')
+#            out_encoder = tf.layers.dense(fc_encoder, 16, activation=selu, name='out_encoder')
+#    return out_encoder
+
+
+
 
 
 def attn_readout_v3(readout, attn_window, attn_heads, page_features, seed):
@@ -441,8 +494,19 @@ class Model:
         self.hparams = hparams
         self.seed = seed
         self.inp = inp
+        self.DO_MLP_POSTPROCESS = self.hparams.DO_MLP_POSTPROCESS
         self.lookback_K_actual = min(hparams.LOOKBACK_K, hparams.history_window_size_minmax[0])
         print('self.lookback_K_actual',self.lookback_K_actual)
+
+
+
+#        with tf.Graph().as_default():
+#            config = tf.ConfigProto(gpu_options=tf.GPUOptions(allow_growth=True))
+#            with tf.Session(config=config) as sess:
+#                result = sess.run([self.inp.history_window_size, self.inp.horizon_window_size])
+#                print(result)
+        print('Model.py history, horizon : ', self.inp.history_window_size, self.inp.horizon_window_size)
+
 
 
 #        inp.time_x = tf.Print(inp.time_x, ['where NANs in inp.time_x :', tf.where(tf.is_nan(inp.time_x))])
@@ -457,11 +521,15 @@ class Model:
         
         
         # Encoder activation losses
-        enc_stab_loss = rnn_stability_loss(encoder_output, hparams.encoder_stability_loss / inp.history_window_size)
-        enc_activation_loss = rnn_activation_loss(encoder_output, hparams.encoder_activation_loss / inp.history_window_size)
-
+#        enc_stab_loss = rnn_stability_loss(encoder_output, hparams.encoder_stability_loss / tf.cast(inp.history_window_size, tf.float32)) #!!!!!!!!when random history-horizons, need to cast dtypes here
+#        enc_activation_loss = rnn_activation_loss(encoder_output, hparams.encoder_activation_loss / tf.cast(inp.history_window_size, tf.float32)) #!!!!!!
+        enc_stab_loss = rnn_stability_loss(encoder_output, hparams.encoder_stability_loss / inp.history_window_size) #!!!!!!!!when random history-horizons, need to cast dtypes here
+        enc_activation_loss = rnn_activation_loss(encoder_output, hparams.encoder_activation_loss / inp.history_window_size) #!!!!!!
+        
+        
         # Convert state from cuDNN representation to TF RNNCell-compatible representation
         encoder_state, summary_z = convert_cudnn_state_v3(h_state, hparams, c_state,
+#        encoder_state, summary_z = convert_cudnn_state_v3(h_state, hparams, seed, c_state,
                                                dropout=hparams.gate_dropout if is_train else 1.0)
 #        encoder_state = tf.Print(encoder_state, ['encoder_state',tf.shape(encoder_state),encoder_state])
 #        summary_z = tf.Print(summary_z, ['summary_z',tf.shape(summary_z),summary_z])
@@ -479,12 +547,28 @@ class Model:
             attn_features, attn_weights = attn_readout_v3(enc_readout, inp.attn_window, hparams.attention_heads,
                                                       fingerprint, seed=seed)
 
+        print('building decoder')
+
         # Run decoder
         #... = decoder(encoder_state, attn_features, prediction_inputs, previous_y)
         decoder_targets, decoder_outputs = self.decoder(encoder_state,
                                                         attn_features if hparams.use_attn else None,
                                                         summary_z if hparams.RECURSIVE_W_ENCODER_CONTEXT else None,
                                                         inp.time_y, inp.norm_x[:, -self.lookback_K_actual:]) #in decoder function def:   inp.time_y = "prediction_inputs";  inp.norm_x[:, -1] = "previous_y" (i.e. the final x normalizd))
+#        decoder_targets = tf.Print(decoder_targets,['decoder_targets',decoder_targets,'decoder_outputs',decoder_outputs])        
+        
+        
+        #If doing the MLP postprocessing step to adjust predictions:
+#        if self.DO_MLP_POSTPROCESS:
+#            self.kernel_size
+#            self.kernel_offset
+#            decoder_targets, decoder_outputs = self.MLP_postprocess(encoder_state,
+#                                                            attn_features if hparams.use_attn else None,
+#                                                            summary_z if hparams.RECURSIVE_W_ENCODER_CONTEXT else None,
+#                                                            inp.time_y, inp.norm_x[:, -self.kernel_size+self.kernel_offset:])  
+#            decoder_targets = tf.Print(decoder_targets,['decoder_targets',decoder_targets,'decoder_outputs',decoder_outputs])        
+        
+        
         
         
 #        decoder_targets = tf.Print(decoder_targets,['encoder_state',encoder_state,'inp.time_y',inp.time_y,'inp.norm_x',inp.norm_x])
@@ -494,6 +578,8 @@ class Model:
         # Decoder activation losses
         dec_stab_loss = rnn_stability_loss(decoder_outputs, hparams.decoder_stability_loss / inp.horizon_window_size)
         dec_activation_loss = rnn_activation_loss(decoder_outputs, hparams.decoder_activation_loss / inp.horizon_window_size)
+        print('dec_stab_loss',dec_stab_loss)
+        print('dec_activation_loss',dec_activation_loss)
 
         # Get final denormalized predictions
         self.predictions = decode_predictions(decoder_targets, inp)
@@ -545,7 +631,9 @@ class Model:
 
         def build_cell(idx):
             with tf.variable_scope('decoder_cell', initializer=self.default_init(idx)):
-                cell = rnn.GRUBlockCell(self.hparams.rnn_depth)
+                print('self.hparams.rnn_depth',self.hparams.rnn_depth)
+                
+                cell = rnn.GRUBlockCell(self.hparams.rnn_depth) #GRUBlockCellV2 same butnewer version just variables named differently?
                 has_dropout = hparams.decoder_input_dropout[idx] < 1 \
                               or hparams.decoder_state_dropout[idx] < 1 or hparams.decoder_output_dropout[idx] < 1
 
@@ -585,8 +673,12 @@ class Model:
 
 
         nest.assert_same_structure(encoder_state, cell.state_size)
+#        predict_timesteps = 7777#tf.reshape(self.inp.horizon_window_size, [])
         predict_timesteps = self.inp.horizon_window_size
+#        print('predict_timesteps',predict_timesteps,type(predict_timesteps))
+        #When random size steps, cannot know dims in advance to do below assert:
         assert prediction_inputs.shape[1] == predict_timesteps #!!!!!!!quantiles
+#        print('predict_timesteps',predict_timesteps,'prediction_inputs.shape[1]',prediction_inputs.shape)
 
         # [batch_size, time, input_depth] -> [time, batch_size, input_depth]
         inputs_by_time = tf.transpose(prediction_inputs, [1, 0, 2])
@@ -634,6 +726,8 @@ class Model:
             if self.hparams.RECURSIVE_W_ENCODER_CONTEXT:
                 next_input = tf.concat([next_input, summary_z], axis=1) #!!!!!!!!summary_z[-1]
                     
+            print('next_input',next_input)
+            print('prev_state',prev_state)            
             # Run RNN cell
             output, state = cell(next_input, prev_state)
             # Make prediction from RNN outputs
@@ -669,6 +763,9 @@ class Model:
         # Run the loop
         _timestep, _projected_output, _state, targets_ta, outputs_ta = tf.while_loop(cond_fn, loop_fn, loop_init)
         
+        #!!!!!!!!if do the decoder as fixed max predict window, then here, when in train mode,  slice to get only those really evaluated
+        
+        
         
         print('decoder')
 #        print('_timestep',_timestep)
@@ -699,3 +796,4 @@ class Model:
 #        raw_outputs = tf.Print(raw_outputs, print_list)
         
         return targets, raw_outputs
+

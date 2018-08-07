@@ -182,6 +182,7 @@ class ModelTrainerV2:
     @property
     def train_ops(self):
         model = self.train_model
+#        print('model.train_op',model.train_op)
         return [model.train_op]  # , model.summaries
 
     def metric_ops(self, key):
@@ -247,7 +248,9 @@ class MultiModelTrainer:
         ops = [self.inc_step] + self.global_ops
         for trainer in self.active():
             ops.extend(trainer.train_ops)
+        print('ops', ops)
         results = self._metric_step(Stage.TRAIN, ops, sess, epoch, summary_every=20)
+        print('results: ', results)
         #return results[:len(self.global_ops) + 1] # step, grad_norm
         return results[0]
 
@@ -446,7 +449,7 @@ def train(features_set, sampling_period, name, hparams, multi_gpu=False, n_model
     print('eval_every_step', eval_every_step)
 
 
-    def random_draw_history_and_horizon_window_sizes(trainer):
+    def random_draw_history_and_horizon_window_sizes(trainer,sess):
         """
         Want to not only have random start end, but also variable size chunks for 
         history and horizon sizes in TRAINING phase.
@@ -455,12 +458,35 @@ def train(features_set, sampling_period, name, hparams, multi_gpu=False, n_model
 #        metrics = []
         history = np.random.randint(low=hparams.history_window_size_minmax[0],high=hparams.history_window_size_minmax[1]+1)
         horizon = np.random.randint(low=hparams.horizon_window_size_minmax[0],high=hparams.horizon_window_size_minmax[1]+1)        
+        print('random draw: history, horizon', history, horizon)
+#        attn_window = history - horizon + 1
+#        max_train_empty = min(history-1, int(np.floor(history * (1 - TT.train_model.inp.train_completeness_threshold))))
+#        max_predict_empty = int(np.floor(horizon * (1 - TT.train_model.inp.predict_completeness_threshold)))   
         for TT in trainer.trainers:
-            TT.train_model.inp.history_window_size = history
-            TT.train_model.inp.horizon_window_size = horizon
-            TT.train_model.inp.attn_window = history - horizon + 1
-            TT.train_model.inp.max_train_empty = int(round(history * (1 - TT.train_model.inp.train_completeness_threshold)))
-            TT.train_model.inp.max_predict_empty = int(round(horizon * (1 - TT.train_model.inp.predict_completeness_threshold)))
+#            TT.train_model.inp.history_window_size = history
+#            TT.train_model.inp.horizon_window_size = horizon
+#            TT.train_model.inp.attn_window = history - horizon + 1
+#            TT.train_model.inp.max_train_empty = min(history-1, int(np.floor(history * (1 - TT.train_model.inp.train_completeness_threshold))))
+#            TT.train_model.inp.max_predict_empty = int(np.floor(horizon * (1 - TT.train_model.inp.predict_completeness_threshold)))   
+##            TT.train_model.inp = InputPipeline
+##            TT.train_model.init(sess)
+#            TT.train_model.inp.inp.restore(sess)
+#            TT.train_model.inp.init_iterator(sess)
+            
+            #TT.train_model.inp = 77777
+#            TT.train_model = 77777
+            pass
+            
+            
+            
+            #model.pipe = InputPipeline(...) #!!!!can just reinit new pipe each time?        
+#                #In InputPipe __init__:
+#                def init_iterator(self, session):
+#                    session.run(self.iterator.initializer) 
+            
+            
+            
+            
 #            metrics.append(TT.dict_metrics)
 #        MOD_=0
 #        STAGE_=1#index
@@ -481,8 +507,8 @@ def train(features_set, sampling_period, name, hparams, multi_gpu=False, n_model
     def create_model(features_set, sampling_period, scope, index, prefix, seed):
 
         #Just dummy filler, not important what value [since in training we will randomly vary these]
-        HISTORY_DUMMY = 111
-        HORIZON_DUMMY = 42
+        HISTORY_DUMMY = 333
+        HORIZON_DUMMY = 77
 
         with tf.variable_scope('input') as inp_scope:
             with tf.device("/cpu:0"):
@@ -547,6 +573,8 @@ def train(features_set, sampling_period, name, hparams, multi_gpu=False, n_model
         return ModelTrainerV2(train_model, eval_stages, index, patience=patience,
                               stop_metric=stop_metric,
                               summary_writer=summ_writer)
+
+
 
 
     if n_models == 1:
@@ -618,7 +646,12 @@ def train(features_set, sampling_period, name, hparams, multi_gpu=False, n_model
         # pipe.load_vars(sess)
         inp.restore(sess)
         for model in all_models:
-            model.init(sess)
+            model.init(sess)#is just doing:
+#            class ModelTrainerV2:
+#                def init(self, sess):
+#                    for model in list(self.eval_models) + [self.train_model]:
+#                        model.inp.init_iterator(sess)            
+            
         # if beholder:
         #    visualizer = Beholder(session=sess, logdir=summ_path)
         step = 0
@@ -642,11 +675,17 @@ def train(features_set, sampling_period, name, hparams, multi_gpu=False, n_model
             for _ in tqr:
                 #!!!!!!!!!! Variable random length train predict windows
                 #Random draw the train, predict window lengths
-#                print(_)
-#                trainer = random_draw_history_and_horizon_window_sizes(trainer)
+                print(_)
+                trainer = random_draw_history_and_horizon_window_sizes(trainer,sess)
 #                print('+++++++++++++++', [(TT.train_model.inp.history_window_size,TT.train_model.inp.horizon_window_size) for TT in trainer.trainers])
 #                print('--------', [(TT.train_model.inp.max_train_empty,TT.train_model.inp.max_predict_empty) for TT in trainer.trainers])
-
+#                print('::::::::::::::', [(TT.train_model.inp.iterator.get_next()) for TT in trainer.trainers])
+#                print('::::::::::::::', [(TT.train_model.inp.time_x,TT.train_model.inp.time_y) for TT in trainer.trainers])
+                #model.init(sess) ????
+                #model.pipe = InputPipeline(...) #!!!!can just reinit new pipe each time?        
+#                #In InputPipe __init__:
+#                def init_iterator(self, session):
+#                    session.run(self.iterator.initializer)                
                 try:
                     step = trainer.train_step(sess, epoch)
 #                    print('+-+-+-+-+-+-+-', [(TT.train_model.inp.history_window_size,TT.train_model.inp.horizon_window_size) for TT in trainer.trainers])

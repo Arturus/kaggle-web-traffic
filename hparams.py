@@ -14,7 +14,7 @@ params_s32 = dict(
     attention_heads=1,
     encoder_readout_dropout=0.4768781146510798,
 
-    encoder_rnn_layers=1,
+    encoder_rnn_layers=3,
     decoder_rnn_layers=1,
 
     # decoder_state_dropout_type=['outside','outside'],
@@ -58,8 +58,11 @@ params_s32 = dict(
     #Lookback K steps: [without specifying, default previous Kaggle setting is K=1]:
     #for predicting y_i, insteda of just feeding in previous K=1 prediction (y_i-1),
     #feed in all previous K predictions: y_
-    LOOKBACK_K = 1, #!!!!Can NOT set this to be bigger than min history size (history_window_size_minmax[0])
+    LOOKBACK_K = 3, #!!!!Can NOT set this to be bigger than min history size (history_window_size_minmax[0])
     #since then depending on random draw would possibly need to look back further than history size.
+    
+    #True or False to use MLP module postprocessor to locally adjust estimates
+    DO_MLP_POSTPROCESS=False,
 )
 
 

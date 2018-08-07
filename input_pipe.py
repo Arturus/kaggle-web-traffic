@@ -234,11 +234,11 @@ class InputPipe:
         :return: result of cut() + args
         """
 #        def randomize_window_sizes():#, *args):
-#            self.horizon_window_size = tf.random_uniform((), 7, 60, dtype=tf.int32)
-#            self.history_window_size = tf.random_uniform((), 7, 366, dtype=tf.int32)
+#            self.horizon_window_size = tf.Variable(tf.random_uniform((), 7, 60, dtype=tf.int32))
+#            self.history_window_size = tf.Variable(tf.random_uniform((), 7, 366, dtype=tf.int32))
 #            self.attn_window = self.history_window_size - self.horizon_window_size + 1
-#            self.max_train_empty = tf.cast(tf.round(tf.multiply(tf.cast(self.history_window_size,tf.float32),(1 - self.train_completeness_threshold))),tf.int32)
-#            self.max_predict_empty = tf.cast(tf.round(tf.multiply(tf.cast(self.horizon_window_size,tf.float32),(1 - self.predict_completeness_threshold))),tf.int32)
+#            self.max_train_empty = tf.cast(tf.floor(tf.multiply(tf.cast(self.history_window_size,tf.float32),(1 - self.train_completeness_threshold))),tf.int32)
+#            self.max_predict_empty = tf.cast(tf.floor(tf.multiply(tf.cast(self.horizon_window_size,tf.float32),(1 - self.predict_completeness_threshold))),tf.int32)
 #            #return args        
 #        randomize_window_sizes()        
         
@@ -429,7 +429,7 @@ class InputPipe:
 
 
     def __init__(self, features_set, sampling_period, inp: VarFeeder, features: Iterable[tf.Tensor], N_time_series: int, mode: ModelMode, n_epoch=None,
-                 batch_size=127, runs_in_burst=1, verbose=True, horizon_window_size=60, history_window_size=500,
+                 batch_size=127, runs_in_burst=1, verbose=True, horizon_window_size=60, history_window_size=200,
                  train_completeness_threshold=1, predict_completeness_threshold=1, back_offset=0,
                  train_skip_first=0, rand_seed=None):
         """
@@ -483,6 +483,8 @@ class InputPipe:
                 print("Train start %s, predict start %s, end %s" % (train_start, eval_start, end))
             assert self.start_offset >= 0
 
+
+        #For random unfirom draws: leave these as placeholders
         self.history_window_size = history_window_size #!!!!!!!!!!!random resize
         self.horizon_window_size = horizon_window_size#!!!!!!!!!!!random resize
         self.attn_window = history_window_size - horizon_window_size + 1#!!!!!!!!!!!random resize
@@ -492,6 +494,20 @@ class InputPipe:
         #least 1 valid value in the history window, so do min(history-1, xxxxx)
         self.max_train_empty = min(history_window_size-1, int(np.floor(history_window_size * (1 - train_completeness_threshold))))
         self.max_predict_empty = int(np.floor(horizon_window_size * (1 - predict_completeness_threshold)))
+        
+#        self.history_window_size = tf.placeholder(tf.int32, shape=[], name='history_window_size')
+#        self.horizon_window_size = tf.placeholder(tf.int32, shape=[], name='horizon_window_size')
+#        self.attn_window = tf.placeholder(tf.int32, shape=[], name='attn_window')
+#        self.max_train_empty = tf.placeholder(tf.int32, shape=[], name='max_train_empty')
+#        self.max_predict_empty = tf.placeholder(tf.int32, shape=[], name='max_predict_empty')
+        
+#        self.history_window_size = tf.constant(222,tf.int32, shape=[], name='history_window_size')
+#        self.horizon_window_size = tf.constant(33,tf.int32, shape=[], name='horizon_window_size')
+#        self.attn_window = 111#history_window_size - horizon_window_size + 1
+#        self.max_train_empty = 111#tf.placeholder(tf.int32, shape=[], name='max_train_empty')
+#        self.max_predict_empty = 1111#tf.placeholder(tf.int32, shape=[], name='max_predict_empty')        
+        
+        
         self.mode = mode
         self.verbose = verbose
         
@@ -506,14 +522,14 @@ class InputPipe:
         print('attn_window',self.attn_window)
 
         
-        def random_draw_new_window_sizes():
-            history = np.random.randint(low=7,high=120+1)
-            horizon = np.random.randint(low=7,high=60+1)        
-            self.history_window_size = history
-            self.horizon_window_size = horizon
-            self.attn_window = history - horizon + 1
-            self.max_train_empty = min(history_window_size-1, int(np.floor(history_window_size * (1 - train_completeness_threshold))))
-            self.max_predict_empty = int(np.floor(horizon * (1 - self.predict_completeness_threshold)))
+#        def random_draw_new_window_sizes():
+#            history = np.random.randint(low=7,high=120+1)
+#            horizon = np.random.randint(low=7,high=60+1)        
+#            self.history_window_size = history
+#            self.horizon_window_size = horizon
+#            self.attn_window = history - horizon + 1
+#            self.max_train_empty = min(history_window_size-1, int(np.floor(history_window_size * (1 - train_completeness_threshold))))
+#            self.max_predict_empty = int(np.floor(horizon * (1 - self.predict_completeness_threshold)))
     
     
         
