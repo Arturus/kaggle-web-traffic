@@ -196,55 +196,6 @@ def make_fingerprint(x, is_train, fc_dropout, seed):
 
 
 
-def MLP_postprocess(decoder_outputs, decoder_inputs, kernel_size, kernel_offset, seed):
-    """
-    As a postprocess decoder step:
-    
-    After the decoder has output predictions for each decoder timestep 
-    (in standard mode this is a vector of predictions: one per timestep
-    vs. if doing quantile regression, is a matrix timesteps x quantiles...)
-    
-    Refine those predictions by taking into account the neighboring predictions.
-    Ideally, the RNN/LSTM/GRU state would contain all necessary information about state 
-    to make good predictions. In reality, might be asking too much, could be useful 
-    to do a second pass over the outputs to improve predictions.
-    
-    E.g. if encoding shock events: binary 0,1 with 1 on change day:
-    if there is no pre-event shoulder, no information on Monday takes advantage 
-    of known change about to ocur on Tuesday. This postprocessor will help with that.
-    
-    kernel_size - int
-    The size, in #timesteps, of the MLP postprocess kernel.
-    For a given timestep of decoder, a window containing that day is used to 
-    hard select which nearby timesteps are allowed to contribute to refinement 
-    for that timestep. I.e. bigger kernel means looking at more nearby RNN outputs.
-
-    kernel_offset - int
-    The offset, in #timesteps, of the MLP postprocess kernel from the given timestep under consideration.
-    0 offset means kernel has rightmost index exactly on the given timestep,
-    1 offset means the rightmost timestep included in the postprocess window is 
-    the timestep exactly 1 position right of the timestep under consideration, ..., 
-    ...
-    K-1 is when the kernel window is trasnlated as far as possible to the right,
-    i.e. has the given timestep as the LEFTmost position, and K-1 positions to the right of the day in question.
-    In other words, offset tells you how many positions to the right of the given timestep are included in the kernel window.
-    
-    For this mini feedforward net, just use 1 hidden layer with nonlinearity, and for #of nodes there, just make it half of #input nodes to this MLP.
-    """
-#    with tf.variable_scope("MLP_postprocess"):
-#        with tf.variable_scope('mlp',
-#                               initializer=layers.variance_scaling_initializer(factor=1.0, mode='FAN_IN', seed=seed)):
-#            flattend_input = tf.concat([asdasd,asd,asd])
-#            decoder_outs_windowed, decoder_ins__windowed = asdasdasd func of kernel sizes...
-#            N_nodes = 
-#            fc_encoder = tf.layers.dense(cnn_out, 512, activation=selu, name='fc_encoder')
-#            out_encoder = tf.layers.dense(fc_encoder, 16, activation=selu, name='out_encoder')
-#    return out_encoder
-
-
-
-
-
 def attn_readout_v3(readout, attn_window, attn_heads, page_features, seed):
     # input: [n_days, batch, readout_depth]
     # [n_days, batch, readout_depth] -> [batch(readout_depth), width=n_days, channels=batch]
@@ -510,9 +461,16 @@ class Model:
 
 
 #        inp.time_x = tf.Print(inp.time_x, ['where NANs in inp.time_x :', tf.where(tf.is_nan(inp.time_x))])
+#        inp.time_x = tf.Print(inp.time_x, ['inp.time_x :', tf.shape(inp.time_x),inp.time_x])
+        
+        
 #        inp.time_x = tf.check_numerics(inp.time_x,'inp.time_x has NANs')
-
-
+#        inp.time_y = tf.Print(inp.time_y, ['inp.time_y :', tf.shape(inp.time_y),inp.time_y])
+#        inp.norm_x = tf.Print(inp.norm_x, ['inp.norm_x :', tf.shape(inp.norm_x),inp.norm_x])
+#        inp.time_x = tf.Print(inp.time_x, ['inp.time_x[:,:,0] :', tf.shape(inp.time_x[:,:,0]),inp.time_x[:,:,0]])
+#        gggg = tf.reduce_mean(tf.cast(tf.equal(inp.norm_x, inp.time_x[:,:,0]), tf.int32))
+#        inp.time_x = tf.Print(inp.time_x, ['mean tf.equal(inp.norm_x, inp.time_x[:,:,0]) should be 1 :', gggg])        
+        
 
         encoder_output, h_state, c_state = make_encoder(inp.time_x, inp.encoder_features_depth, is_train, hparams, seed,
                                                         transpose_output=False)
@@ -555,22 +513,25 @@ class Model:
                                                         attn_features if hparams.use_attn else None,
                                                         summary_z if hparams.RECURSIVE_W_ENCODER_CONTEXT else None,
                                                         inp.time_y, inp.norm_x[:, -self.lookback_K_actual:]) #in decoder function def:   inp.time_y = "prediction_inputs";  inp.norm_x[:, -1] = "previous_y" (i.e. the final x normalizd))
-#        decoder_targets = tf.Print(decoder_targets,['decoder_targets',decoder_targets,'decoder_outputs',decoder_outputs])        
+        
+#        decoder_targets = tf.Print(decoder_targets,['decoder_targets BEFORE',tf.shape(decoder_targets),decoder_targets,'decoder_outputs',tf.shape(decoder_outputs),decoder_outputs])
+        
         
         
         #If doing the MLP postprocessing step to adjust predictions:
-#        if self.DO_MLP_POSTPROCESS:
-#            self.kernel_size
-#            self.kernel_offset
-#            decoder_targets, decoder_outputs = self.MLP_postprocess(encoder_state,
-#                                                            attn_features if hparams.use_attn else None,
-#                                                            summary_z if hparams.RECURSIVE_W_ENCODER_CONTEXT else None,
-#                                                            inp.time_y, inp.norm_x[:, -self.kernel_size+self.kernel_offset:])  
-#            decoder_targets = tf.Print(decoder_targets,['decoder_targets',decoder_targets,'decoder_outputs',decoder_outputs])        
-        
-        
-        
-        
+        if self.DO_MLP_POSTPROCESS:
+            #Could 0 pad, but for now instead just ensure kernelsize and offset are such that
+            #thre are no encoder-side issues with kernel extending beyond history (relevant for very short histories)
+            #Offset can stay the same (represents number of positions to RIGHT of given position),
+            #but adjust kernel size to fit:
+            self.offset = hparams.MLP_POSTPROCESS__KERNEL_OFFSET
+            leftside = hparams.MLP_POSTPROCESS__KERNEL_SIZE -1 -self.offset
+            self.actual_kernel_size = min(leftside, hparams.history_window_size_minmax[0]) +1 +self.offset
+            decoder_targets = self.MLP_postprocess(decoder_targets, inp.time_y, 
+                                                   inp.time_x, 
+                                                   summary_z if hparams.RECURSIVE_W_ENCODER_CONTEXT else None, 
+                                                   self.actual_kernel_size, self.offset, None)
+#        decoder_targets = tf.Print(decoder_targets,['decoder_targets AFTER postprocess',decoder_targets,'decoder_outputs',decoder_outputs])        
 #        decoder_targets = tf.Print(decoder_targets,['encoder_state',encoder_state,'inp.time_y',inp.time_y,'inp.norm_x',inp.norm_x])
 #        decoder_targets = tf.Print(decoder_targets,['decoder_targets',decoder_targets,'decoder_outputs',decoder_outputs])
         
@@ -780,10 +741,16 @@ class Model:
 #        targets_ta_tensor = tf.Print(targets_ta_tensor,[targets_ta_tensor])
 #        print('targets_ta',targets_ta)
 #        print('outputs_ta',outputs_ta)
+        
+        
         # Get final tensors from buffer arrays
+#        targets_ta = tf.Print(targets_ta,['targets_ta',targets_ta,tf.shape(targets_ta)])
+#        print('targets_ta',targets_ta)
         targets = targets_ta.stack()
         # [time, batch_size, 1] -> [time, batch_size]
         targets = tf.squeeze(targets, axis=-1)
+#        print('targets after squeeze',targets)
+#        targets = tf.Print(targets,['targets after squeeze',targets,tf.shape(targets)])
         raw_outputs = outputs_ta.stack() if return_raw_outputs else None
 
 #        print('targets',targets)
@@ -796,4 +763,226 @@ class Model:
 #        raw_outputs = tf.Print(raw_outputs, print_list)
         
         return targets, raw_outputs
+    
+    
+    
+    def MLP_postprocess(self, decoder_targets, decoder_features, time_x, summary_z, cropped_kernel_size, offset, seed):#kernel_size, kernel_offset, seed):
+        """
+        As a postprocess decoder step:
+        
+        After the decoder has output predictions for each decoder timestep 
+        (in standard mode this is a vector of predictions: one per timestep
+        vs. if doing quantile regression, is a matrix timesteps x quantiles...)
+        
+        Refine those predictions by taking into account the neighboring predictions.
+        Ideally, the RNN/LSTM/GRU state would contain all necessary information about state 
+        to make good predictions. In reality, might be asking too much, could be useful 
+        to do a second pass over the outputs to improve predictions.
+        
+        E.g. if encoding shock events: binary 0,1 with 1 on change day:
+        if there is no pre-event shoulder, no information on Monday takes advantage 
+        of known change about to ocur on Tuesday. This postprocessor will help with that.
+        
+        
+        hparams.MLP_POSTPROCESS__QUANTILES = [None],#[.20, .30, .40, .50, ,75, .90]
+        hparams.MLP_POSTPROCESS__KERNEL_SIZE=15,
+        hparams.MLP_POSTPROCESS__KERNEL_OFFSET=7,
+        
+        
+        
+        INPUTS:
+            decoder_targets - [HORIZON x BATCH]  (for now ignoring quantiles just single value per decoder step)
+            decoder_features - decoder side features for all horizon timesteps [BATCH x HISTORY x FEATURES] (but gets transposed later to make easier)
+            time_x - encoder side features and ground truth for all history timesteps [BATCH x HISTORY x FEATURES+1] (but gets transposed later to make easier)
+            summary_z - encoded context vector, simple way using same vector as context for every decoder step [BATCH x RNNSTATEDEPTH]. Will be None if not doing encoder context option
+            
+        
+            kernel_size - int
+            The size, in #timesteps, of the MLP postprocess kernel.
+            For a given timestep of decoder, a window containing that day is used to 
+            hard select which nearby timesteps are allowed to contribute to refinement 
+            for that timestep. I.e. bigger kernel means looking at more nearby RNN outputs.
+    
+            kernel_offset - int
+            The offset, in #timesteps, of the MLP postprocess kernel from the given timestep under consideration.
+            0 offset means kernel has rightmost index exactly on the given timestep,
+            1 offset means the rightmost timestep included in the postprocess window is 
+            the timestep exactly 1 position right of the timestep under consideration, ..., 
+            ...
+            K-1 is when the kernel window is trasnlated as far as possible to the right,
+            i.e. has the given timestep as the LEFTmost position, and K-1 positions to the right of the day in question.
+            In other words, offset tells you how many positions to the right of the given timestep are included in the kernel window.
+        
+        
+        For this mini feedforward net, just use 1 hidden layer with nonlinearity, and for #of nodes there, just make it half of #input nodes to this MLP.
+                
+        ALternative: you could also choose to simplify things a bit on the left side (early in time)
+        where there is overlap with encoder side and even potentially with before the encoder starts (which needs padding).
+        To simplify, could choose to not do refinement on those earliest outputs, and only do refinement when kernel
+        is fully in decoder area. Justification could be that refinement of those early predictions is less needed
+        since they are closer to the forecast creation time, so should suffer less from the recursion problem and hopefully be OK already.
+        """
+        
+        
+        #Get dimensions of things based on inputs, features, options:
+        #N1 is number nuerons in input layer, is   (KERNELSIZE x FEATURES) + KERNELSIZE (+ENCODER_DEPTH if encoder_context)
+        context_depth = summary_z.shape[-1].value if self.hparams.RECURSIVE_W_ENCODER_CONTEXT else 0 #Should just be the encoder RNN depth
+        feature_depth = decoder_features.shape[-1].value
+        batchsize = tf.shape(decoder_features)[0]
+        N1 =  cropped_kernel_size*(feature_depth+1) + context_depth + 1 #+1 is to also use the timestep index as a feature, this is since at beginning/end of iterations, could have overlap with 0-padded region, and those nodes of net would normally have a very different distribution of nonzero values, so signal this.
+        N2 = int(min(max(.5*N1,100),400)) #Use between 100-400 neurons in layer 2, using approximately 
+        print('MLP Post-processing N1, N2:', N1, N2)
+        #0-pad the right side (for now just make offset/kernel size such that don't need to worry about left side before encoder)
+        #The amount of padding needed is based on horizon, kernel size, offset:
+        print('offset',offset)
+        print('batchsize',batchsize)
+        #_ = tf.stack([offset, tf.shape(decoder_features)[0], feature_depth])
+        _ = tf.stack([offset, batchsize, feature_depth+1])
+        right_pad_zeros = tf.fill(_, 0.0)
+        
+        
 
+        
+        #If doing quantile regression, then quantiles list will have scalars instead of a single "None" element:
+        Nquantiles = len(self.hparams.MLP_POSTPROCESS__QUANTILES) if self.hparams.MLP_POSTPROCESS__QUANTILES[0] else 0
+        N_out = 1 + Nquantiles
+        print('Nquantiles',Nquantiles)
+        print('N_out',N_out)
+        
+
+        #Quick check there are correct number timesteps:
+        assert decoder_features.shape[1] == self.inp.horizon_window_size #!!!!!!!quantiles
+
+        #Rearrange tensors to all have time first:
+        # [batch_size, time, input_depth] -> [time, batch_size, input_depth]
+        decoder_targets = tf.expand_dims(decoder_targets,axis=-1)
+        decoder_features = tf.transpose(decoder_features, [1, 0, 2])
+        print('decoder_targets',decoder_targets)
+        print('decoder_features',decoder_features)        
+        
+        decoder_by_time = tf.concat([decoder_targets,decoder_features],axis=2)
+        encoder_by_time = tf.transpose(time_x, [1, 0, 2]) #Has target and features stacked already
+
+        print('decoder_by_time',decoder_by_time)
+        print('encoder_by_time',encoder_by_time)
+        all_features_targets_by_time = tf.concat([encoder_by_time,decoder_by_time,right_pad_zeros],axis=0)
+        print('all_features_targets_by_time',all_features_targets_by_time)
+        
+        
+        #Simple 2 layer feedforward
+        def feedforward(_x):
+            fc1 = tf.layers.dense(_x, N2, activation=selu, name='fc1', kernel_initializer=self.default_init())
+            fc2 = tf.layers.dense(fc1, N_out, name='fc2', kernel_initializer=self.default_init())
+            return fc2
+        
+        
+        
+#        #Simple 2 layer feedforward
+#        def feedforward(kernel_window_cropped):
+##            _x = tf.placeholder(tf.float32, [None, N1])
+#            def network():
+#                with tf.Graph().as_default():
+#                    _x = tf.placeholder(tf.float32, [None, N1])
+#                    with tf.variable_scope("MLP_postprocess", 
+#                                       initializer=layers.variance_scaling_initializer(factor=1.0, mode='FAN_IN', seed=seed)):
+#                        
+##                        tf.layers.Input(shape=(N1,), dtype=tf.float32)
+#                        print('_x',_x)
+#                        fc1 = tf.layers.dense(_x, N2, activation=selu, name='fc1')
+#                        print('fc1',fc1)
+#                        fc2 = tf.layers.dense(fc1, N_out, name='fc2')
+#                        print('fc2',fc2)
+#    #                    out = tf.layers.Network(kernel_window_cropped, fc2)
+#                        return fc2
+#                    
+#            with tf.Graph().as_default():
+#                net = network()
+##                config = tf.ConfigProto(gpu_options=tf.GPUOptions(allow_growth=True))
+##                with tf.Session(config=config) as sess:
+#                with tf.Session() as sess:                
+#                    result = sess.run(net,feed_dict={_x: kernel_window_cropped})
+#                    return result
+                
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+    
+    
+        # Stop condition for decoding loop
+        def cond_fn(timestep, all_timesteps_input, array_targets: tf.TensorArray):
+            return timestep < self.inp.horizon_window_size
+
+        def loop_fn(timestep, all_timesteps_input, array_targets: tf.TensorArray):
+            print(timestep)
+            #Excerpt time window
+            start = timestep - cropped_kernel_size + 1 + offset + self.inp.history_window_size
+            end = timestep + offset + self.inp.history_window_size + 1
+            cropped = all_features_targets_by_time[start:end,:,:]
+            print('timestep,start,end', timestep,start,end)
+            cropped = tf.transpose(cropped,[1,0,2])
+            cropped = tf.contrib.layers.flatten(cropped)
+            
+            #If using context vector, also append it
+            if self.hparams.RECURSIVE_W_ENCODER_CONTEXT:
+                cropped = tf.concat([cropped,summary_z],axis=1)
+
+            print('cropped',cropped)
+            
+            #Include timestep related features:
+            #Because using fixed dimension MLP with fixed input for input layer neurons,
+            #but window is sliding over boundaries with different meaning (0 padded vs legit values),
+            #use 2 additional features that help control issue of boundary effects.
+            #Use the (normalized) percent through decoder phase, = normalize(timestep/horizon),
+            #and the (normalized) percent overlap of the kernel with the 0padded region
+            f1 = timestep/self.inp.horizon_window_size - .5
+            f2 = tf.maximum(0, offset - (self.inp.horizon_window_size - timestep)) / offset - .5
+            _ = tf.stack([batchsize,1])
+            f1 = tf.cast(tf.fill(_, f1),tf.float32)
+            f2 = tf.cast(tf.fill(_, f2),tf.float32)
+            print('f1',f1)
+            print('f2',f2)
+            print('cropped',cropped)
+            flattened_input = tf.concat([cropped,f1,f2],axis=-1)
+            print('flattened_input',flattened_input)
+
+            #Pass tensor into the simple feedforward network:
+            projected_output = feedforward(flattened_input)
+            #Append this timestep results 
+            array_targets = array_targets.write(timestep, projected_output)
+            
+                
+            return timestep + 1, all_timesteps_input, array_targets #!!!!!! quantiles: projected_output will be diff dims
+
+
+
+        # Initial values for loop
+        loop_init = [tf.constant(0, dtype=tf.int32), #timestep
+                    all_features_targets_by_time, #all_timesteps_input
+                    tf.TensorArray(dtype=tf.float32, size=self.inp.horizon_window_size)] #array_targets
+
+        # Run the loop
+        _timestep, _, targets_ta = tf.while_loop(cond_fn, loop_fn, loop_init)        
+        
+        #Get the post-processed predictions
+        #[time, batch_size, Nptcl]
+        targets = targets_ta.stack()
+        
+        # [time, batch_size, 1] -> [time, batch_size]
+#        targets = tf.squeeze(targets, axis=-1)
+                
+        return targets    
+
+
+
+
+
+#Direct MLP decoder...

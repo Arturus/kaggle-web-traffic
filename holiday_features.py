@@ -117,6 +117,7 @@ def encode_all_holidays__daily(dates_range):
     #Fixed Holidays [add other international ones as needed]:
     xmas_dates = get_fixed_date_holidays__daily(dates_range, '12-25')
     new_years_dates = get_fixed_date_holidays__daily(dates_range, '01-01')
+    st_patricks_dates = get_fixed_date_holidays__daily(dates_range, '03-17')
     july4_dates = get_fixed_date_holidays__daily(dates_range, '07-04')
     halloween_dates = get_fixed_date_holidays__daily(dates_range, '10-31')
     cincodemayo_dates = get_fixed_date_holidays__daily(dates_range, '05-05')
@@ -134,11 +135,13 @@ def encode_all_holidays__daily(dates_range):
     #Custom / Single Event moving Holidays
     suberbowl_dates = ['2014-02-02','2015-02-01','2016-02-07','2017-02-05','2018-02-04','2019-02-03']
     
+    
     #Dict of holiday dates: shoulder halfwidth  [-S, -S+1, ..., holiday, holiday+1, ..., holiday+S]
     #for now just use 3 as the shoulder width for all "major" holidays, 0 or 1 for "minor" holidays
     #Use ODD numbers for shoulder sizes
     holidays = {'xmas_dates':(xmas_dates,3),
                 'new_years_dates':(new_years_dates,3),
+                'st_patricks_dates':(st_patricks_dates,1),
                 'july4_dates':(july4_dates,1),
                 'halloween_dates':(halloween_dates,1),
                 'cincodemayo_dates':(cincodemayo_dates,1),

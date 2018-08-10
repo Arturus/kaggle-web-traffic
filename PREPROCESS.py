@@ -19,7 +19,7 @@ import numpy as np
 #from statsmodels.tsa.seasonal import seasonal_decompose
 #stl = seasonal_decompose(x)
 
-from sklearn.preprocessing import Imputer
+#from sklearn.preprocessing import Imputer
 from collections import Counter
 
 from copy import deepcopy
@@ -407,7 +407,7 @@ def data_augmentation(df, jitter_pcts_list=[.05,.01], do_low_pass_filter=True, a
         
 
 
-def format_like_Kaggle(df, mode, myDataDir, imputation_method, sampling_period, do_augmentation, train_test_split_date, start_date=None, test_end_date=None):
+def format_like_Kaggle(df, mode, myDataDir, imputation_method, sampling_period, do_augmentation, validation_method, train_test_split_date, start_date=None, test_end_date=None, chunk_name=None):
     """
     Take my data and format it exactly as needed to use for the Kaggle seq2seq
     model [requires making train_1.csv, train_2.csv, key_1.csv, key_2.csv]
@@ -517,17 +517,24 @@ def format_like_Kaggle(df, mode, myDataDir, imputation_method, sampling_period, 
         if mode=='TRAIN':
             latest = min(latest, train_test_split_date)   
 
-        
         if mode=='TEST':
             #In TEST mode, to have a COMPLETELY distinct test set, start from day after last day of taining set:
             #(this means in TEST phase, not even the known history will overlap with the training set, 
             #which arguably wiould be ok as long as the horizon is completely outside the training data,
             #but to be extra conservative, do this):
             assert (earliest < train_test_split_date), 'TRAIN end date (/TEST start date) must be after start of data'
-            next_day = pd.to_datetime(train_test_split_date) + pd.Timedelta(1,unit='D')
-#            next_day_string = next_day.dt.strftime('%Y-%m-%d')
-            next_day_string = next_day.strftime('%Y-%m-%d')
-            earliest = max(earliest,next_day_string)
+            
+            #For backtest chunking vs. disjoint train-test split, test set date range is defined differently:
+            if validation_method=='disjoint':
+                next_day = pd.to_datetime(train_test_split_date) + pd.Timedelta(1,unit='D')
+                next_day_string = next_day.strftime('%Y-%m-%d')
+                earliest = max(earliest,next_day_string)
+            #for backtesting in chunks, always have the same start date, which is same as the train start date:
+            #Just resuse the already defined earliest date from training set
+            #elif validation_method=='backtest_chunks':
+            #    earliest = max(earliest,next_day_string)            
+            
+            
             
             if test_end_date:
                 #In TEST mode, if there is a manually defined end date, clip there:
@@ -638,8 +645,11 @@ def format_like_Kaggle(df, mode, myDataDir, imputation_method, sampling_period, 
     
     #Make the train csv [for now just do 1, ignore the train 2 part ???]
     #save_path = os.path.join(os.path.split(myDataDir)[0],f"train_2[ours_{sampling_period}].csv")
-    suffix = '_TEST' if mode=='TEST' else ''
-    save_path = os.path.join(os.path.split(myDataDir)[0],"train_2_ours_{}{}.csv".format(sampling_period,suffix))
+    suffix = 'TEST' if mode=='TEST' else 'TRAIN'
+    ind = chunk_name if chunk_name else ''
+#    augmented = 'augmented' if do_augmentation else ''
+#    save_path = os.path.join(os.path.split(myDataDir)[0],"ours_{}{}__{}{}.csv".format(sampling_period,augmented,suffix,ind))
+    save_path = os.path.join(os.path.split(myDataDir)[0],"ours_{}_{}{}.csv".format(sampling_period,suffix,ind))    
     df = make_train_csv(df, mode, save_path, imputation_method, sampling_period, start_date, test_end_date)
 
     #For the prediction phase, need the key ????
@@ -665,56 +675,131 @@ if __name__ == '__main__':
     # =============================================================================
     #     PARAMETERS
     # =============================================================================
+    RANDOM_SEED = 123456   
+    #Seed random number generator [holdout ID's, data augmentation]
+    np.random.seed(RANDOM_SEED)
+    
+    
     # TOTAL COMPLETED TRIPS:
     #myDataDir_TRAIN = r"/Users/kocher/Desktop/forecasting/exData/totalCTDaily"
     myDataDir_TRAIN = r"/Users/kocher/Desktop/forecasting/exData/totalCTDaily___2018"#Since the test data is just the same data, but a superset, just use it for consistency
     myDataDir_TEST = r"/Users/kocher/Desktop/forecasting/exData/totalCTDaily___2018"     
     IMPUTATION_METHOD = 'lagKmedian' #'median' #'STL' #'lagKmedian' #None
-    START_DATE = '2015-01-01' #None
-    TEST_END_DATE = '2018-07-05' #None #'2018-07-05' just trim off 2 rightmost days since many cities NAN on 7/7/18
-    TRAIN_TEST_SPLIT_DATE = '2017-04-30' #The last day date to include in training set [and 1st NEW day of test set will be the next day.]
     REMOVE_ID_LIST = []#[3,4]#id's for locations that are no longer useful
+    HOLDOUT_ID_LIST = list(np.random.choice(1800,30,replace=False)) #As a holdout set, exclude a random ~30 ID's  (approximate, since not all ID's 1 to N are present, so will be fewer than Nchose)
     SAMPLING_PERIOD = 'daily' #'daily', 'weekly', 'monthly'
-    DO_AUGMENTATION = False #False #True
-    RANDOM_SEED = None
+    DO_AUGMENTATION = True #False #True
+    
+    #Regardless of validation method, just use this 
+    START_DATE = '2015-01-01' #None
+    
+    #Whether to do a single disjoint train-test split, vs. backtest in chunks that partially overlap
+    VALIDATION_METHOD = 'backtest_chunks' #'disjoint'
+    
+    
+    
+
 
     # =============================================================================
     #     MAIN
     # =============================================================================
    
-    print('START_DATE',START_DATE)
-    print('TEST_END_DATE',TEST_END_DATE)
-    print('TRAIN_TEST_SPLIT_DATE',TRAIN_TEST_SPLIT_DATE)
+
     print('DO_AUGMENTATION',DO_AUGMENTATION)
     print('RANDOM_SEED',RANDOM_SEED)        
     print('REMOVE_ID_LIST',REMOVE_ID_LIST)
+    print('HOLDOUT_ID_LIST',HOLDOUT_ID_LIST)
     print('IMPUTATION_METHOD',IMPUTATION_METHOD)
     print('myDataDir_TRAIN',myDataDir_TRAIN)
     print('myDataDir_TEST',myDataDir_TEST)
     print('SAMPLING_PERIOD',SAMPLING_PERIOD)
+    print('VALIDATION_METHOD',VALIDATION_METHOD)
     
 
     
-    #Seed random number generator in case of doing data augmentation:
-    np.random.seed(RANDOM_SEED)
+
     
     
-    #For TRAIN and TEST data
-    modes = ['TRAIN','TEST']
-    for i, myDataDir in enumerate([myDataDir_TRAIN,myDataDir_TEST]):
-        mode=modes[i]
-        print(mode)
-        #Don't do augmentation for test phase [test only on real]
-        if i==1:
-            DO_AUGMENTATION=False
+    
+    #If doing a single test set, completely disjoint from training set:
+    if VALIDATION_METHOD == 'disjoint':
         
-        #Load
-        df = load_my_data(myDataDir)
+        TEST_END_DATE = '2018-07-05' #None #'2018-07-05' just trim off 2 rightmost days since many cities NAN on 7/7/18
+        TRAIN_TEST_SPLIT_DATE = '2017-04-30' #The last day date to include in training set [and 1st NEW day of test set will be the next day.]
+        print('START_DATE',START_DATE)
+        print('TRAIN_TEST_SPLIT_DATE',TRAIN_TEST_SPLIT_DATE)
+        print('TEST_END_DATE',TEST_END_DATE)        
         
-        #Remove any bad/irrelevant cities
-        df = remove_cities(df,REMOVE_ID_LIST)
+        #For TRAIN and TEST data
+        modes = ['TRAIN','TEST']
+        for i, myDataDir in enumerate([myDataDir_TRAIN,myDataDir_TEST]):
+            mode=modes[i]
+            print(mode)
+            #Don't do augmentation for test phase [test only on real]
+            #Actually, just leave it same as however things were trained, but then separate performance statistics later so can still see how this affects things
+            #if i==1:
+            #    DO_AUGMENTATION=False
+            
+            #Load
+            df = load_my_data(myDataDir)
+            
+            #Remove any bad/irrelevant cities
+            df = remove_cities(df,REMOVE_ID_LIST)
+            
+            #Remove random holdout IDs [for TRAIN only: still want to test on them]:
+            if mode=='TRAIN':
+                df = remove_cities(df,HOLDOUT_ID_LIST)
+            
+            #Put into same format as used by Kaggle, save out csv's    
+            df = format_like_Kaggle(df, mode, myDataDir, IMPUTATION_METHOD, SAMPLING_PERIOD, DO_AUGMENTATION, VALIDATION_METHOD, TRAIN_TEST_SPLIT_DATE, start_date=START_DATE, test_end_date=TEST_END_DATE, chunk_name=None)
+            
+            print('Finished with ', mode)
+
+
+
+    #If doing a single test set, completely disjoint from training set:
+    elif VALIDATION_METHOD == 'backtest_chunks':
         
-        #Put into same format as used by Kaggle, save out csv's    
-        df = format_like_Kaggle(df, mode, myDataDir, IMPUTATION_METHOD, SAMPLING_PERIOD, DO_AUGMENTATION, TRAIN_TEST_SPLIT_DATE, start_date=START_DATE, test_end_date=TEST_END_DATE)
+        chunks_dict = {'set1':(START_DATE,'2017-07-05','2017-10-05'),
+                       'set2':(START_DATE,'2017-10-05','2018-01-05'),
+                       'set3':(START_DATE,'2018-01-05','2018-04-05'),
+                       'set4':(START_DATE,'2018-04-05','2018-07-05'),
+                       }
         
-        print('Finished with ', mode)
+        print(chunks_dict)
+        for k,v in chunks_dict.items():
+        
+            chunk_name=k
+            start = v[0] #train and test both use same start date in this backtest mode
+            
+            train_last_day = v[1]
+            test_end = v[2]
+        
+            print('chunk name : ', chunk_name)
+            print('START_DATE',start)
+            print('TRAIN_TEST_SPLIT_DATE',train_last_day)  
+            print('TEST_END_DATE',test_end)
+            
+            #For TRAIN and TEST data
+            modes = ['TRAIN','TEST']
+            for i, myDataDir in enumerate([myDataDir_TRAIN,myDataDir_TEST]):
+                mode=modes[i]
+                print(mode)
+                #Actually, just leave it same as however things were trained, but then separate performance statistics later so can still see how this affects things
+                #if i==1:
+                #    DO_AUGMENTATION=False
+                
+                #Load
+                df = load_my_data(myDataDir)
+                
+                #Remove any bad/irrelevant cities
+                df = remove_cities(df,REMOVE_ID_LIST)
+                
+                #Remove random holdout IDs [for TRAIN only: still want to test on them]:
+                if mode=='TRAIN':
+                    df = remove_cities(df,HOLDOUT_ID_LIST)                
+                
+                #Put into same format as used by Kaggle, save out csv's    
+                df = format_like_Kaggle(df, mode, myDataDir, IMPUTATION_METHOD, SAMPLING_PERIOD, DO_AUGMENTATION, VALIDATION_METHOD, train_last_day, start_date=start, test_end_date=test_end, chunk_name=chunk_name)
+                
+                print('Finished with ', mode)

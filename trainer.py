@@ -416,7 +416,7 @@ def train(features_set, sampling_period, name, hparams, multi_gpu=False, n_model
         tf.set_random_seed(seed)
 
     with tf.device("/cpu:0"):
-        inp = VarFeeder.read_vars("data/vars_TRAIN")
+        inp = VarFeeder.read_vars(f"data/{name}")
         if side_split:
             splitter = Splitter(page_features(inp, features_set), inp.page_map, 3, train_sampling=train_sampling,
                                 test_sampling=eval_sampling, seed=seed)
@@ -507,8 +507,8 @@ def train(features_set, sampling_period, name, hparams, multi_gpu=False, n_model
     def create_model(features_set, sampling_period, scope, index, prefix, seed):
 
         #Just dummy filler, not important what value [since in training we will randomly vary these]
-        HISTORY_DUMMY = 333
-        HORIZON_DUMMY = 77
+        HISTORY_DUMMY = 100
+        HORIZON_DUMMY = 20
 
         with tf.variable_scope('input') as inp_scope:
             with tf.device("/cpu:0"):

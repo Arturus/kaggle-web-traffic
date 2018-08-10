@@ -30,7 +30,7 @@ def read_cached(name) -> pd.DataFrame:
                 return df
 
 
-def read_all(data_type,sampling_period,mode) -> pd.DataFrame:
+def read_all(data_type,sampling_period,mode_chunk_name) -> pd.DataFrame:
     """
     Reads source data for training/prediction
     """
@@ -43,18 +43,12 @@ def read_all(data_type,sampling_period,mode) -> pd.DataFrame:
         return df
 
     # Path to cached data
-    if mode=='train':
-        path = os.path.join('data', 'all_TRAIN.pkl')
-    elif mode=='test':
-        path = os.path.join('data', 'all_TEST.pkl')
+    path = os.path.join('data', 'all_{}.pkl'.format(mode_chunk_name))
         
     if os.path.exists(path):
         df = pd.read_pickle(path)
     else:
-        end = '' if mode=='train' else '_TEST'
-        if data_type=='kaggle':
-            end='' 
-        filename = f'data/train_2_{data_type}_{sampling_period}{end}'
+        filename = f'data/{data_type}_{sampling_period}_{mode_chunk_name}'
         df = read_file(filename)
         
         if data_type=='kaggle':
@@ -85,11 +79,11 @@ def read_all(data_type,sampling_period,mode) -> pd.DataFrame:
 #    return result
 
 
-def read_x(start, end, data_type, sampling_period, mode) -> pd.DataFrame:
+def read_x(start, end, data_type, sampling_period, mode_chunk_name) -> pd.DataFrame:
     """
     Gets source data from start to end date. Any date can be None
     """
-    df = read_all(data_type,sampling_period,mode)
+    df = read_all(data_type,sampling_period,mode_chunk_name)
     # User GoogleAnalitycsRoman has really bad data with huge traffic spikes in all incarnations.
     # Wikipedia banned him, we'll ban it too
 #    bad_roman = df.index.str.startswith("User:GoogleAnalitycsRoman")
@@ -181,7 +175,7 @@ def find_start_end(data: np.ndarray):
     return start_idx, end_idx
 
 
-def prepare_data(start, end, valid_threshold, data_type, sampling_period, mode) -> Tuple[pd.DataFrame, pd.DataFrame, np.ndarray, np.ndarray]:
+def prepare_data(start, end, valid_threshold, data_type, sampling_period, mode_chunk_name) -> Tuple[pd.DataFrame, pd.DataFrame, np.ndarray, np.ndarray]:
     """
     Reads source data, calculates start and end of each series, drops bad series, calculates log1p(series)
     :param start: start date of effective time interval, can be None to start from beginning
@@ -190,7 +184,7 @@ def prepare_data(start, end, valid_threshold, data_type, sampling_period, mode) 
     ratio is less than threshold
     :return: tuple(log1p(series), nans, series start, series end)
     """
-    df = read_x(start, end, data_type, sampling_period, mode)
+    df = read_x(start, end, data_type, sampling_period, mode_chunk_name)
     starts, ends = find_start_end(df.values)
     # boolean mask for bad (too short) series
     page_mask = (ends - starts) / df.shape[1] < valid_threshold
@@ -283,8 +277,8 @@ def normalize(values: np.ndarray):
 
 def run():
     parser = argparse.ArgumentParser(description='Prepare data')
-    #parser.add_argument('data_dir')
-    parser.add_argument('mode', help="Which mode running in, determines some directories: {'train','test'}")
+    parser.add_argument('data_dir',  help="Directory of pickles, etc., e.g. 'data/TRAINset4' or 'data/TESTset4'")
+#    parser.add_argument('mode', help="Which mode running in, determines some directories: {'train','test'}")
     
     parser.add_argument('data_type', help="Which data set to use: {'kaggle','ours'}")
     parser.add_argument('sampling_period', help="Sampling period for our data: {'daily','weekly','monthly'}")
@@ -298,14 +292,17 @@ def run():
     args = parser.parse_args()
 
 
-    if args.mode=='train':
-        data_dir = r"data/vars_TRAIN" 
-    elif args.mode=='test':
-        data_dir = r"data/vars_TEST"
-    print(data_dir, args.data_type, args.features_set)
+#    if args.mode=='train':
+#        data_dir = r"data/vars_TRAIN" 
+#    elif args.mode=='test':
+#        data_dir = r"data/vars_TEST"
+    
+    mode_chunk_name = args.data_dir.split('/')[-1]
+    
+    print(args.data_dir, args.data_type, args.features_set)
 
     # Get the data
-    df, nans, starts, ends = prepare_data(args.start, args.end, args.valid_threshold, args.data_type, args.sampling_period, args.mode)
+    df, nans, starts, ends = prepare_data(args.start, args.end, args.valid_threshold, args.data_type, args.sampling_period, mode_chunk_name)
 
     # =============================================================================
     # STATIC FEATURES
@@ -575,7 +572,7 @@ def run():
     print(plain.keys())
 
     # Store data to the disk
-    VarFeeder(data_dir, tensors, plain)
+    VarFeeder(args.data_dir, tensors, plain)
 
 
 if __name__ == '__main__':

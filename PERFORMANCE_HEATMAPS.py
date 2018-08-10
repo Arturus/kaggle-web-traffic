@@ -36,7 +36,7 @@ def load_dict(path):
     return d
     
     
-def aggregate__overall(data_dict):
+def aggregate__overall(data_dict, real_only, id_hold_out_list, bad_ids):
     """
     For each (history,horizon) pair, marginalized over all id's and dates
     
@@ -45,6 +45,20 @@ def aggregate__overall(data_dict):
 #    print(data_dict.items())
     agg_dict = defaultdict(lambda:[])
     for k,v in data_dict.items():
+        series_id = k[3]
+        #Only use the real series, ignore the synthetic ones
+        #(synthetic series have name like {id}__... )
+        if real_only:
+            if '__' in series_id:
+                continue
+        #If have a set of holdout id's:
+        if id_hold_out_list:
+            if series_id not in id_hold_out_list:
+                continue
+        #Regardless of mode, if this is one of the corrupted time series, ignore it:
+        if series_id in bad_ids:
+            continue
+    
         history = k[0]
         horizon = k[1]
         smape = v['SMAPE']
@@ -81,7 +95,8 @@ def aggregate__overall(data_dict):
     
 
 
-def make_heatmap(metrics_arrays, histories, horizons, outdir):
+
+def make_heatmap(metrics_arrays, histories, horizons, outdir, name):
     """
     Visualize the SMAPE values
     """
@@ -89,48 +104,29 @@ def make_heatmap(metrics_arrays, histories, horizons, outdir):
     #Use 200 (worst possible SMAPE), vs.
     #to improve dynamic range use the highest measured SMAPE value from the heatmaps
     
-    print('metrics_arrays')
-    print(metrics_arrays)
+#    print('metrics_arrays')
+#    print(metrics_arrays)
     for k,v in metrics_arrays.items():
+        
+        savename = k+'_'+name
         
         vmax = np.nanmin([200.,np.nanmax(np.ceil(v))])
         
         plt.figure()
         plt.imshow(v,vmin=0.,vmax=vmax)
-        plt.title(k,fontsize=15)
+        plt.title(savename,fontsize=15)
         plt.colorbar()
         plt.xlabel('Horizon',fontsize=15)
         plt.ylabel('History',fontsize=15)
         plt.xticks(np.arange(len(horizons)),horizons,fontsize=15)
         plt.yticks(np.arange(len(histories)),histories,fontsize=15)
     #    plt.grid()
-        savepath = os.path.join(outdir,f'history_horizon_heatmap__{k}.png')
+        savepath = os.path.join(outdir,f'history_horizon_heatmap__{savename}.png')
         plt.savefig(savepath)
     
     
     
     
-
-
-
-
-
-#def make_heatmaps(logdir='data/logs', K_last=3):
-#    #Load all saved numpy arrays of performance metrics per PREDICTION run:
-#    all_runs = []
-#    eval_smapes_lastKmean = []
-#    array_names = [i for i in ssssss if i.endswith('epochs_performance.npy')]
-#    run_names = [i.split('_')[0] for i in array_names]
-#    for i, an in enumerate(array_names):
-#        x = np.load(an)
-#        #Get last K epoch metrics:
-#        j = x[-K_last:]
-#        eval_smapes_lastKmean.append(np.mean(j[:,5]))
-#        all_runs.append(x)
-#        
-#        
-#
-#
 if __name__=='__main__':
 #    parser = argparse.ArgumentParser()
 #    parser.add_argument('--logdir', default='data/logs', help="Directory where numpy arrays of performance are")
@@ -143,11 +139,28 @@ if __name__=='__main__':
     
     #for each of the 4 dicts:
     
+    #Make list of id's that were held out from training, to assess transfer ability
+    HOLD_OUTS = [str(i) for i in range(500)]
+    
+    #Some of the ID's are just bad, have multiple month long gaps from corrupted data, etc., so can ignore them
+    BAD_IDs = []#['44','46','581','582','583','584']
+    
     path = os.path.join(OUTDIR,'hist_horiz__all.pickle')
     data = load_dict(path)
-    metrics_dict, histories, horizons, metrics_arrays = aggregate__overall(data)
-    make_heatmap(metrics_arrays, histories, horizons, OUTDIR)
-    #Save out the metrics dict    
-    dict_savename = os.path.join(OUTDIR,"hist_horiz__all__metrics.pickle")
-    with open(dict_savename, "wb") as outp:
-        pickle.dump(metrics_dict, outp)    
+    
+    for real_only in [True,False]:
+        for id_hold_out_list in [HOLD_OUTS,[]]:
+            
+            r = 'real' if real_only else 'realAndsynthetic'
+            h = 'holdoutsOnly' if id_hold_out_list else 'allIDs'
+            name = r+'_'+h
+            print(name)
+            
+            
+            metrics_dict, histories, horizons, metrics_arrays = aggregate__overall(data, real_only, id_hold_out_list, BAD_IDs)
+            make_heatmap(metrics_arrays, histories, horizons, OUTDIR, name)
+            
+            #Save out the metrics dict
+            dict_savename = os.path.join(OUTDIR,f"hist_horiz__{name}__metrics.pickle")
+            with open(dict_savename, "wb") as outp:
+                pickle.dump(metrics_dict, outp)    

@@ -22,21 +22,21 @@ from pandas import ExcelWriter
 # 
 # =============================================================================
 #For histories, we care most about shorter series, so sample lower numbers more densely
-HISTORY_SIZES=[7,8,50]#[7,8,10,12,15,20,30,50,70,100,150,250,366]
-HORIZON_SIZES=[30,60]#[7,10,20,30,40,50,60]
+HISTORY_SIZES=[250]#,8,50]#[7,8,10,12,15,20,30,50,70,100,150,250,366]
+HORIZON_SIZES=[100]#[7,10,20,30,40,50,60]
 EVAL_STEP_SIZE=4#step size for evaluation. 1 means use every single day as a FCT to evaluate on. E.g. 3 means step forward 3 timesteps between each FCT to evaluate on.
 
 # =============================================================================
 # PARAMETRS
 # =============================================================================
-TEST_DF_PATH = r"data/train_2_ours_daily_TEST.csv"
-TEST_dir = r"data/vars_TEST"
+TEST_DF_PATH = r"data/ours_daily_TEST{}.csv"
+TEST_dir = r"data/vars_TEST{}"
 FEATURES_SET = 'full'# 'arturius' 'simple' 'full'
 SAMPLING_PERIOD = 'daily'
 DATA_TYPE = 'ours' #'kaggle' #'ours'
 Nmodels = 3
-PARAM_SETTING = 's32' #Which of the parameter settings to use [s32 is the default Kaggle one, with a few thigns modified as I want]
-PARAM_SETTING_FULL_NAME = hparams.params_s32 #Which of the parameter settings to use corresponding to the PARAM_SETTING. The mapping is defined in hparams.py at the end in "sets = {'s32':params_s32,..."
+PARAM_SETTING = 'encdec' #Which of the parameter settings to use [s32 is the default Kaggle one, with a few thigns modified as I want]
+PARAM_SETTING_FULL_NAME = hparams.params_encdec #Which of the parameter settings to use corresponding to the PARAM_SETTING. The mapping is defined in hparams.py at the end in "sets = {'s32':params_s32,..."
 OUTPUT_DIR = 'output'
 
 SAVE_PLOTS = False
@@ -268,8 +268,19 @@ if __name__ == '__main__':
                     series = f_preds.iloc[jj]
                     _id = series.name
                     true = groundtruth[groundtruth['Page'].astype(str) ==_id]
+                    
+                    
+                    first_pred_day = dates[0]
+                    d1 = pd.date_range(first_pred_day,first_pred_day)[0] - pd.Timedelta(history,unit='D')
+                    history_dates = pd.date_range(start=d1, end=first_pred_day, freq='D')[:-1]   #!!!!!! asuming daily sampling...
+                    history_dates = [i.strftime('%Y-%m-%d') for i in history_dates]
+                    history_missing_count = np.isnan(true[history_dates].values[0]).sum()
+#                    print('history_missing_count',history_missing_count)                    
 #                    print('true',true)
                     true = true[dates].values[0]
+                    horizon_missing_count = np.isnan(true).sum()
+#                    print('horizon_missing_count',horizon_missing_count)
+                    
                     #Get smape, mae, bias over this prediction
                     smp = mean_smape(true, series.values)
 #                    mae = asdasdasd
@@ -279,7 +290,10 @@ if __name__ == '__main__':
                                     'bias':bi,
                                     #'MAE':mae,
                                     'predict_start_date':dates[0],
-                                    'predict_end_date':dates[-1]}
+                                    'predict_end_date':dates[-1],
+                                    'history_missing_count':history_missing_count,
+                                    'horizon_missing_count':horizon_missing_count
+                                    }
 #                    print(hist_horiz__all)
                     
                     
