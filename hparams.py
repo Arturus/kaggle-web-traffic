@@ -83,19 +83,26 @@ params_encdec = dict(
     
     # MLP POSTPROCESSOR (ADJUST PREDICTIONS IN LOCAL WINDOWS, AND CAN DO QUANTILES)
     #True or False to use MLP module postprocessor to locally adjust estimates
-    DO_MLP_POSTPROCESS=False,#True,#False
+    DO_MLP_POSTPROCESS=True,#True,#False
     MLP_POSTPROCESS__KERNEL_SIZE=15,
     MLP_POSTPROCESS__KERNEL_OFFSET=7,
-    #If doing quantile regression in addition to point estimates trained to minimize SMAPE.
-    #Also, since SMAPE point estimates are biased positive, can use alternative
-    #point estimator trainde by pinball loss on quantiles < 50 [e.g. 45,38, etc., see what has bias ~0]
-    #To not use quantile regression, just leave list empty
-    MLP_POSTPROCESS__QUANTILES = [.45,.47,.48],#[None],#[.20, .30, .40, .50, ,75, .90] #ValueError: Multi-valued hyperparameters cannot be empty: QUANTILES   ->  so make it a list with "None" in it    
+    
+  
     
     
     # DIRECT MLP DECODER (REPLACE RNN CELLS IN DECODER WITH MLP MODULES, AND DO QUANTILES)
     #Do a direct, quantile forecast by using an MLP as decoder module instead of RNN/LSTM/GRU cells:
-    MLP_DIRECT_DECODER=False
+    MLP_DIRECT_DECODER=False,
+    
+    
+    # QUANTILE REGRESSION
+    # For whatever kind of decoder, whether or not to use quantiles
+    DO_QUANTILES=True,
+    #If doing quantile regression in addition to point estimates trained to minimize SMAPE.
+    #Also, since SMAPE point estimates are biased positive, can use alternative
+    #point estimator trainde by pinball loss on quantiles < 50 [e.g. 45,38, etc., see what has bias ~0]
+    #To not use quantile regression, just leave list empty
+    QUANTILES = [.45,.47,.48],#[None],#[.20, .30, .40, .50, ,75, .90] #ValueError: Multi-valued hyperparameters cannot be empty: QUANTILES   ->  so make it a list with "None" in it      
 )
 
 

@@ -289,7 +289,7 @@ def decode_predictions(decoder_readout, inp: InputPipe):#!!!!!quantiles
     return ret
 
 
-def calc_loss(predictions, true_y, additional_mask=None):#!!!!!quantiles
+def calc_loss(predictions, true_y, additional_mask=None, DO_QUANTILES=False):
     """
     Calculates losses, ignoring NaN true values (assigning zero loss to them)
     :param predictions: Predicted values
@@ -307,6 +307,13 @@ def calc_loss(predictions, true_y, additional_mask=None):#!!!!!quantiles
         weights = weights * tf.expand_dims(additional_mask, axis=0)
 
     mae_loss = tf.losses.absolute_difference(labels=true_y, predictions=predictions, weights=weights)
+    
+    if DO_QUANTILES:
+        quantile_losses = []
+        #...
+    else:
+        quantile_losses = None
+        
     return mae_loss, smape_loss(true_y, predictions, weights), calc_smape_rounded(true_y, predictions,
                                                                                   weights), tf.size(true_y)
 
@@ -514,7 +521,7 @@ class Model:
                                                         summary_z if hparams.RECURSIVE_W_ENCODER_CONTEXT else None,
                                                         inp.time_y, inp.norm_x[:, -self.lookback_K_actual:]) #in decoder function def:   inp.time_y = "prediction_inputs";  inp.norm_x[:, -1] = "previous_y" (i.e. the final x normalizd))
         
-#        decoder_targets = tf.Print(decoder_targets,['decoder_targets BEFORE',tf.shape(decoder_targets),decoder_targets,'decoder_outputs',tf.shape(decoder_outputs),decoder_outputs])
+        decoder_targets = tf.Print(decoder_targets,['decoder_targets BEFORE',tf.shape(decoder_targets),decoder_targets,'decoder_outputs',tf.shape(decoder_outputs),decoder_outputs])
         
         
         
@@ -531,7 +538,7 @@ class Model:
                                                    inp.time_x, 
                                                    summary_z if hparams.RECURSIVE_W_ENCODER_CONTEXT else None, 
                                                    self.actual_kernel_size, self.offset, None)
-#        decoder_targets = tf.Print(decoder_targets,['decoder_targets AFTER postprocess',decoder_targets,'decoder_outputs',decoder_outputs])        
+        decoder_targets = tf.Print(decoder_targets,['decoder_targets AFTER postprocess',decoder_targets,'decoder_outputs',decoder_outputs])        
 #        decoder_targets = tf.Print(decoder_targets,['encoder_state',encoder_state,'inp.time_y',inp.time_y,'inp.norm_x',inp.norm_x])
 #        decoder_targets = tf.Print(decoder_targets,['decoder_targets',decoder_targets,'decoder_outputs',decoder_outputs])
         
@@ -548,8 +555,16 @@ class Model:
 #        vv = tf.Print(vv, ['decode_predictions',vv,tf.shape(vv)])
 #        self.predictions = vv
 #        print('self.predictions (still log1p(counts))')
-#        print(self.predictions)
+        print(self.predictions)
         
+        
+        #!!!!!! for now just see if helps. ignore last nodes, only use 0th.
+        self.predictions = self.predictions[0] #Now is batch x time
+        
+        
+        
+#        if self.hparams.DO_QUANTILES:
+#            pass
 
 
         # Calculate losses and build training op
@@ -570,9 +585,15 @@ class Model:
             #from calc_loss:
             #mae_loss, smape_loss(true_y, predictions, weights), calc_smape_rounded(true_y, predictions, weights), tf.size(true_y)
             
+#            if hparams.DO_QUANTILES:
+#                quantile_loss = aaaaaa
+#                self.quantile_losses = {q:aaaaaa for q in self.QUANTILES}
+            
             if is_train:
                 # Sum all losses
                 total_loss = smape_loss + enc_stab_loss + dec_stab_loss + enc_activation_loss + dec_activation_loss  #!!!!!!!! put in pinball loss instead of SMAPE when doing quantiles
+#                if hparams.DO_QUANTILES:
+#                    total_loss += quantile_loss
                 self.train_op, self.glob_norm, self.ema = make_train_op(total_loss, asgd_decay, prefix=graph_prefix)
 
 
@@ -784,7 +805,7 @@ class Model:
         of known change about to ocur on Tuesday. This postprocessor will help with that.
         
         
-        hparams.MLP_POSTPROCESS__QUANTILES = [None],#[.20, .30, .40, .50, ,75, .90]
+        hparams.QUANTILES = [None],#[.20, .30, .40, .50, ,75, .90]
         hparams.MLP_POSTPROCESS__KERNEL_SIZE=15,
         hparams.MLP_POSTPROCESS__KERNEL_OFFSET=7,
         
@@ -829,7 +850,7 @@ class Model:
         context_depth = summary_z.shape[-1].value if self.hparams.RECURSIVE_W_ENCODER_CONTEXT else 0 #Should just be the encoder RNN depth
         feature_depth = decoder_features.shape[-1].value
         batchsize = tf.shape(decoder_features)[0]
-        N1 =  cropped_kernel_size*(feature_depth+1) + context_depth + 1 #+1 is to also use the timestep index as a feature, this is since at beginning/end of iterations, could have overlap with 0-padded region, and those nodes of net would normally have a very different distribution of nonzero values, so signal this.
+        N1 =  cropped_kernel_size*(feature_depth+1) + context_depth + 2 #+2 is to also use two timestep index features, this is since at beginning/end of iterations, could have overlap with 0-padded region, and those nodes of net would normally have a very different distribution of nonzero values, so signal this.
         N2 = int(min(max(.5*N1,100),400)) #Use between 100-400 neurons in layer 2, using approximately 
         print('MLP Post-processing N1, N2:', N1, N2)
         #0-pad the right side (for now just make offset/kernel size such that don't need to worry about left side before encoder)
@@ -843,9 +864,9 @@ class Model:
         
 
         
-        #If doing quantile regression, then quantiles list will have scalars instead of a single "None" element:
-        Nquantiles = len(self.hparams.MLP_POSTPROCESS__QUANTILES) if self.hparams.MLP_POSTPROCESS__QUANTILES[0] else 0
-        N_out = 1 + Nquantiles
+        #If doing quantile regression
+        Nquantiles = len(self.hparams.QUANTILES) if self.hparams.DO_QUANTILES else 0
+        N_out = 1 + Nquantiles #+1 because also do a point estimate optimized by SMAPE. (Even if some of the wuantiles e.g. .48 are really for point estimates, still keep the direct SMAPE optimized point estimate as well.)
         print('Nquantiles',Nquantiles)
         print('N_out',N_out)
         
@@ -952,6 +973,9 @@ class Model:
             print('f2',f2)
             print('cropped',cropped)
             flattened_input = tf.concat([cropped,f1,f2],axis=-1)
+            #Before even running this, we know the shape (other than batchsize which may be dynamic)
+            #So, since dense layer in feed_forward needs last dimension specified, do this:
+            flattened_input.set_shape((None,N1))
             print('flattened_input',flattened_input)
 
             #Pass tensor into the simple feedforward network:
@@ -963,10 +987,14 @@ class Model:
             return timestep + 1, all_timesteps_input, array_targets #!!!!!! quantiles: projected_output will be diff dims
 
 
-
+        #Since we know the dimensions beforehand, jsut use an init with defined dimension so can initialize the feedforward net
+#        _ = tf.stack([batchsize,N1])
+#        init_features_zeros = tf.cast(tf.fill(_, 0.),tf.float32)
+#        print('init_features_zeros',init_features_zeros)
+        
         # Initial values for loop
         loop_init = [tf.constant(0, dtype=tf.int32), #timestep
-                    all_features_targets_by_time, #all_timesteps_input
+                    all_features_targets_by_time, #init_features_zeros,#all_features_targets_by_time, #all_timesteps_input
                     tf.TensorArray(dtype=tf.float32, size=self.inp.horizon_window_size)] #array_targets
 
         # Run the loop

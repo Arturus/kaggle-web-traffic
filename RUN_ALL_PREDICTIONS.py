@@ -19,18 +19,15 @@ from pandas import ExcelWriter
 
 
 # =============================================================================
-# 
-# =============================================================================
-#For histories, we care most about shorter series, so sample lower numbers more densely
-HISTORY_SIZES=[250]#,8,50]#[7,8,10,12,15,20,30,50,70,100,150,250,366]
-HORIZON_SIZES=[100]#[7,10,20,30,40,50,60]
-EVAL_STEP_SIZE=4#step size for evaluation. 1 means use every single day as a FCT to evaluate on. E.g. 3 means step forward 3 timesteps between each FCT to evaluate on.
-
-# =============================================================================
 # PARAMETRS
 # =============================================================================
-TEST_DF_PATH = r"data/ours_daily_TEST{}.csv"
-TEST_dir = r"data/vars_TEST{}"
+#For histories, we care most about shorter series, so sample lower numbers more densely
+HISTORY_SIZES=[7,8,10,12,15,20,30,50,100,200,360]
+HORIZON_SIZES=[7,10,14,20,30,60]
+EVAL_STEP_SIZE=4#step size for evaluation. 1 means use every single day as a FCT to evaluate on. E.g. 3 means step forward 3 timesteps between each FCT to evaluate on.
+PREDICT_MODE = 'backtest'#'disjoint'
+NAMES = ['TESTset1', 'TESTset2', 'TESTset3', 'TESTset4']
+
 FEATURES_SET = 'full'# 'arturius' 'simple' 'full'
 SAMPLING_PERIOD = 'daily'
 DATA_TYPE = 'ours' #'kaggle' #'ours'
@@ -40,6 +37,8 @@ PARAM_SETTING_FULL_NAME = hparams.params_encdec #Which of the parameter settings
 OUTPUT_DIR = 'output'
 
 SAVE_PLOTS = False
+
+
 
 
 
@@ -88,7 +87,7 @@ def mean_bias(true, pred):
 
 
     
-def do_predictions_one_setting(history,horizon,backoffset,TEST_dir,save_plots,n_series):
+def do_predictions_one_setting(history,horizon,backoffset,TEST_dir,save_plots,n_series,chunk):
     
     # =============================================================================
     # 
@@ -96,7 +95,7 @@ def do_predictions_one_setting(history,horizon,backoffset,TEST_dir,save_plots,n_
     #read_all funcion loads the (hardcoded) file "data/all.pkl", or otherwise train2.csv
     print('loading data...')
 
-    df_all = read_all(DATA_TYPE,SAMPLING_PERIOD,'test')
+    df_all = read_all(DATA_TYPE,SAMPLING_PERIOD,f'TEST{chunk}')
     print('df_all.columns')
     print(df_all.columns)
 #        filename = f'train_2_{data_type}_{sampling_period}'
@@ -109,7 +108,7 @@ def do_predictions_one_setting(history,horizon,backoffset,TEST_dir,save_plots,n_
     # 
     # =============================================================================
     prev = df_all#.loc[:,:'2017-07-08']
-    paths = [p for p in tf.train.get_checkpoint_state(f'data/cpt/{PARAM_SETTING}').all_model_checkpoint_paths]
+    paths = [p for p in tf.train.get_checkpoint_state(f'data/cpt/TRAIN{chunk}').all_model_checkpoint_paths]
     #tf.reset_default_graph()
     #preds = predict(paths, default_hparams(), back_offset=0,
     #                    n_models=3, target_model=0, seed=2, batch_size=2048, asgd=True)
@@ -210,6 +209,33 @@ def get_data_timesteps_Nseries(df_path):
 
 
 
+def get_data_timesteps_Nseries__backtest(test_path,train_path):
+    """
+    For backtest chunk mode only.
+    Get the number of data timesteps (which potentially varies per testset1,2,3,4),
+    in order to determine backoffset range.
+    
+    Because in this mode the TEST set also includes the TRAIN ste in it, cannot 
+    just use length of TEST set alone to get datatimesteps.
+    """
+    test = pd.read_csv(test_path)
+#    test_day = test.columns[-1]
+    train = pd.read_csv(train_path)
+#    train_day = train.columns[-1]
+    
+    #Assuming consecutive days, just get diff of number columns:
+    data_timesteps = len(test.columns) - len(train.columns)
+    
+    #Depending if did holdout id's, then TEST would have extra id's not in TRAIN
+    #For batchsize, using N_series as number of rows of TEST set.
+    #Since metrics are later made from dicts, if an ID is predicted on more than once,
+    #is ok, since would have same key in dict and only be there once anyway.
+    N_series = len(test)
+    
+    return data_timesteps, N_series
+        
+    
+
 
 
 
@@ -228,120 +254,132 @@ def SaveMultisheetXLS(list_dfs, list_sheetnames, xls_path):
 
 if __name__ == '__main__':
     
-    print('TEST_DF_PATH',TEST_DF_PATH)
-
-    groundtruth = pd.read_csv(TEST_DF_PATH)
-    groundtruth.sort_values(['Page'])    
-    print('groundtruth',groundtruth)
-
-    if not os.path.exists(OUTPUT_DIR):
-        os.makedirs(OUTPUT_DIR)
     
-    data_timesteps, N_series = get_data_timesteps_Nseries(TEST_DF_PATH)
     
-    hist_horiz__all = {}
-#    hist_horiz__real_only = {}
-#    hist_horiz__dayofweek = {}
-#    hist_horiz__holidays = {}
-    t0 = time.clock()
-    for history in HISTORY_SIZES:
-        for horizon in HORIZON_SIZES:
-            print('HISTORY ',history, 'of ', HISTORY_SIZES)
-            print('HORIZON ',horizon, 'of ', HORIZON_SIZES)
-            if history+horizon >= data_timesteps:
-                print(f'history+horizon ({history+horizon}) >= data set size ({data_timesteps})')
-                continue
-            
-            #Get the range of values that will step through for 
-            offs = [i for i in range(horizon, data_timesteps - history +1, EVAL_STEP_SIZE)]
-            
-            dflist = []
-            for backoffset in offs:
-                print('backoffset ',backoffset, 'of ', offs)
-                f_preds = do_predictions_one_setting(history,horizon,backoffset,TEST_dir,SAVE_PLOTS,N_series)
-                cols = f_preds.columns
-                dates = [i.strftime('%Y-%m-%d') for i in cols]
-                print(dates)
-                
-                #For each series
-                for jj in range(len(f_preds)):
-                    series = f_preds.iloc[jj]
-                    _id = series.name
-                    true = groundtruth[groundtruth['Page'].astype(str) ==_id]
-                    
-                    
-                    first_pred_day = dates[0]
-                    d1 = pd.date_range(first_pred_day,first_pred_day)[0] - pd.Timedelta(history,unit='D')
-                    history_dates = pd.date_range(start=d1, end=first_pred_day, freq='D')[:-1]   #!!!!!! asuming daily sampling...
-                    history_dates = [i.strftime('%Y-%m-%d') for i in history_dates]
-                    history_missing_count = np.isnan(true[history_dates].values[0]).sum()
-#                    print('history_missing_count',history_missing_count)                    
-#                    print('true',true)
-                    true = true[dates].values[0]
-                    horizon_missing_count = np.isnan(true).sum()
-#                    print('horizon_missing_count',horizon_missing_count)
-                    
-                    #Get smape, mae, bias over this prediction
-                    smp = mean_smape(true, series.values)
-#                    mae = asdasdasd
-                    bi = mean_bias(true, series.values)
-#                    print(smape,bias)
-                    hist_horiz__all[(history,horizon,backoffset,_id)] = {'SMAPE':smp, 
-                                    'bias':bi,
-                                    #'MAE':mae,
-                                    'predict_start_date':dates[0],
-                                    'predict_end_date':dates[-1],
-                                    'history_missing_count':history_missing_count,
-                                    'horizon_missing_count':horizon_missing_count
-                                    }
-#                    print(hist_horiz__all)
-                    
-                    
-                #For saving out predictions:
-                dates = [i.strftime('%m/%d/%Y') for i in cols]
-                d = {cols[i]:dates[i] for i in range(len(cols))}
-                f_preds.rename(columns=d,inplace=True)
-                f_preds['Page'] = f_preds.index.values
-                #Depending on missing data in the test set in the history window for this backoffset,
-                #it oculd be that that particular id did not pass the train completeness threshold.
-                #Then it will not be included, but the batchsize will still be len(df), so to fill that missing
-                #id, it will repeat id's that already had predictions. THey will be identical, 
-                #so just take the 1st occurrence for those repeated id's:
-                df = []
-                u_ids = np.unique(f_preds['Page'].values)
-                for u in u_ids:
-                    s = f_preds[f_preds['Page']==u]
-                    if len(s)>1:
-                        s = s.head(1)
-                    df += [s]
-                f_preds = pd.concat(df,axis=0)
-                cols = list(f_preds.columns)
-                cols.remove('Page')
-                cols = ['Page'] + cols
-                f_preds = f_preds[cols]                 
-                print(f_preds)
-                
-                dflist += [f_preds]
-                #Care about the metrics within different partitions:
-                #Beside just history and horizon size, also consider:
-                #real vs. synthetic augmented series
-                #training ID vs. new ID only in TEST set
-                #series contains holiday vs. only non-holidays
-                #day of week
-                
-            savename = f"{str(history)}_{str(horizon)}.xls"
-            savename = os.path.join(OUTPUT_DIR,savename)
-            sheetnames = [str(i) for i in offs]
-            SaveMultisheetXLS(dflist, sheetnames, savename)
-            #each sheet is for a single backoffset, so each sheet contains all ~1800 id's
-
+    #For the 4 chunk backtesting performance assessment
+    for name in NAMES:
+        
+        print('name: ',name)
+        chunk = name.replace('TEST','')
+        TEST_DF_PATH = f"data/ours_daily_{name}.csv"
+        TEST_dir = f"data/{name}"
+        TRAIN_DF_PATH = TEST_DF_PATH.replace('TEST','TRAIN')
+        print('TEST_DF_PATH',TEST_DF_PATH)
+        print('TEST_dir',TEST_dir)
+        print('TRAIN_DF_PATH',TRAIN_DF_PATH)
     
-    print(hist_horiz__all)
-    t1 = time.clock()
-    print('elapsed time: ',t1-t0)
-    #Now that all metrics stored in dict, save dict, and analyze further
-    #pickle ... hist_horiz__all
-#    print(hist_horiz__all)
-    dict_savename = os.path.join(OUTPUT_DIR,"hist_horiz__all.pickle")
-    with open(dict_savename, "wb") as outp:
-        pickle.dump(hist_horiz__all, outp)#, protocol=2)
+        groundtruth = pd.read_csv(TEST_DF_PATH)
+        groundtruth.sort_values(['Page'])    
+        print('groundtruth',groundtruth)
+    
+        if not os.path.exists(OUTPUT_DIR):
+            os.makedirs(OUTPUT_DIR)
+        
+        if PREDICT_MODE=='disjoint':
+            data_timesteps, N_series = get_data_timesteps_Nseries(TEST_DF_PATH)
+        elif PREDICT_MODE=='backtest':
+            data_timesteps, N_series = get_data_timesteps_Nseries__backtest(TEST_DF_PATH,TRAIN_DF_PATH)
+        
+        hist_horiz__all = {}
+        t0 = time.clock()
+        for history in HISTORY_SIZES:
+            for horizon in HORIZON_SIZES:
+                print('HISTORY ',history, 'of ', HISTORY_SIZES)
+                print('HORIZON ',horizon, 'of ', HORIZON_SIZES)
+                if history+horizon >= data_timesteps:
+                    print(f'history+horizon ({history+horizon}) >= data set size ({data_timesteps})')
+                    continue
+                
+                #Get the range of values that will step through for 
+                offs = [i for i in range(horizon, data_timesteps - history +1, EVAL_STEP_SIZE)]
+                
+                dflist = []
+                for backoffset in offs:
+                    print('backoffset ',backoffset, 'of ', offs)
+                    f_preds = do_predictions_one_setting(history,horizon,backoffset,TEST_dir,SAVE_PLOTS,N_series,chunk)
+                    cols = f_preds.columns
+                    dates = [i.strftime('%Y-%m-%d') for i in cols]
+                    print(dates)
+                    
+                    #For each series
+                    for jj in range(len(f_preds)):
+                        series = f_preds.iloc[jj]
+                        _id = series.name
+                        true = groundtruth[groundtruth['Page'].astype(str) ==_id]
+                        
+                        
+                        first_pred_day = dates[0]
+                        d1 = pd.date_range(first_pred_day,first_pred_day)[0] - pd.Timedelta(history,unit='D')
+                        history_dates = pd.date_range(start=d1, end=first_pred_day, freq='D')[:-1]   #!!!!!! asuming daily sampling...
+                        history_dates = [i.strftime('%Y-%m-%d') for i in history_dates]
+                        history_missing_count = np.isnan(true[history_dates].values[0]).sum()
+    #                    print('history_missing_count',history_missing_count)                    
+    #                    print('true',true)
+                        true = true[dates].values[0]
+                        horizon_missing_count = np.isnan(true).sum()
+    #                    print('horizon_missing_count',horizon_missing_count)
+                        
+                        #Get smape, mae, bias over this prediction
+                        smp = mean_smape(true, series.values)
+    #                    mae = asdasdasd
+                        bi = mean_bias(true, series.values)
+    #                    print(smape,bias)
+                        hist_horiz__all[(history,horizon,backoffset,_id)] = {'SMAPE':smp, 
+                                        'bias':bi,
+                                        #'MAE':mae,
+                                        'predict_start_date':dates[0],
+                                        'predict_end_date':dates[-1],
+                                        'history_missing_count':history_missing_count,
+                                        'horizon_missing_count':horizon_missing_count
+                                        }
+    #                    print(hist_horiz__all)
+                        
+                        
+                    #For saving out predictions:
+                    dates = [i.strftime('%m/%d/%Y') for i in cols]
+                    d = {cols[i]:dates[i] for i in range(len(cols))}
+                    f_preds.rename(columns=d,inplace=True)
+                    f_preds['Page'] = f_preds.index.values
+                    #Depending on missing data in the test set in the history window for this backoffset,
+                    #it oculd be that that particular id did not pass the train completeness threshold.
+                    #Then it will not be included, but the batchsize will still be len(df), so to fill that missing
+                    #id, it will repeat id's that already had predictions. THey will be identical, 
+                    #so just take the 1st occurrence for those repeated id's:
+                    df = []
+                    u_ids = np.unique(f_preds['Page'].values)
+                    for u in u_ids:
+                        s = f_preds[f_preds['Page']==u]
+                        if len(s)>1:
+                            s = s.head(1)
+                        df += [s]
+                    f_preds = pd.concat(df,axis=0)
+                    cols = list(f_preds.columns)
+                    cols.remove('Page')
+                    cols = ['Page'] + cols
+                    f_preds = f_preds[cols]                 
+                    print(f_preds)
+                    
+                    dflist += [f_preds]
+                    #Care about the metrics within different partitions:
+                    #Beside just history and horizon size, also consider:
+                    #real vs. synthetic augmented series
+                    #training ID vs. new ID only in TEST set
+                    #series contains holiday vs. only non-holidays
+                    #day of week
+                    
+                savename = f"{str(history)}_{str(horizon)}_{name}.xls"
+                savename = os.path.join(OUTPUT_DIR,savename)
+                sheetnames = [str(i) for i in offs]
+                SaveMultisheetXLS(dflist, sheetnames, savename)
+                #each sheet is for a single backoffset, so each sheet contains all ~1800 id's
+    
+        
+        print(hist_horiz__all)
+        t1 = time.clock()
+        print('elapsed time: ',t1-t0)
+        #Now that all metrics stored in dict, save dict, and analyze further
+        #pickle ... hist_horiz__all
+    #    print(hist_horiz__all)
+        dict_savename = os.path.join(OUTPUT_DIR,f"hist_horiz__all_{name}.pickle")
+        with open(dict_savename, "wb") as outp:
+            pickle.dump(hist_horiz__all, outp)#, protocol=2)

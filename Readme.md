@@ -1,64 +1,44 @@
-# Kaggle Web Traffic Time Series Forecasting
+# RNN-based Encoder-Decoder for Time Series Forecasting w/ Quantiles 
+
+
+Based on Arturus'
+Kaggle Web Traffic Time Series Forecasting
 1st place solution
-
+https://github.com/Arturus/kaggle-web-traffic
 ![predictions](images/predictions.png)
-
-Main files:
- * `make_features.py` - builds features from source data
- * `input_pipe.py` - TF data preprocessing pipeline (assembles features
-  into training/evaluation tensors, performs some sampling and normalisation)
- * `model.py` - the model
- * `trainer.py` - trains the model(s)
- * `hparams.py` - hyperpatameter sets.
- * `submission-final.ipynb` - generates predictions for submission
-
-How to reproduce competition results:
-1. Download input files from https://www.kaggle.com/c/web-traffic-time-series-forecasting/data :
-`key_2.csv.zip`, `train_2.csv.zip`, put them into `data` directory.
-2. Run `python make_features.py data/vars --add_days=63`. It will
-extract data and features from the input files and put them into
-`data/vars` as Tensorflow checkpoint.
-3. Run trainer:
-`python trainer.py --name s32 --hparam_set=s32 --n_models=3 --name s32 --no_eval --no_forward_split
- --asgd_decay=0.99 --max_steps=11500 --save_from_step=10500`. This command
- will simultaneously train 3 models on different seeds (on a single TF graph)
- and save 10 checkpoints from step 10500 to step 11500 to `data/cpt`.
- __Note:__ training requires GPU, because of cuDNN usage. CPU training will not work.
- If you have 3 or more GPUs, add `--multi_gpu` flag to speed up the training. One can also try different
-hyperparameter sets (described in `hparams.py`): `--hparam_set=definc`,
-`--hparam_set=inst81`, etc.
-Don't be afraid of displayed NaN losses during training. This is normal,
-because we do the training in a blind mode, without any evaluation of model performance.
-4. Run `submission-final.ipynb` in a standard jupyter notebook environment,
-execute all cells. Prediction will take some time, because it have to
-load and evaluate 30 different model weights. At the end,
-you'll get `submission.csv.gz` file in `data` directory.
-
 See also [detailed model description](how_it_works.md)
-
-
-
 
 -----------------------------------
 
 GK modifications for own forecasting application:
 
-1) Several architecture improvements:
+1) Architecture improvements:
+	- Recursive feedforward postprocessor: after getting sequence of predictions from RNN-based decoder, refine predictions in 2 layer MLP using nearby timesteps predictions + features + context.
 	- give encoded representation vector as context to every decoder timestep
-	- K step lookback: ideally the RNN would learn a hidden state representation that ~completely describes state of the system. In realiy, that is too much to expect. In addition to previous timestep prediction y_i-1, also feed in y_i-2,...,y_i-K for K-step lookback. [~same as using lagged features]
-	- performance analysis of validation set SMAPE as function of history/horizon window sizes [randomized uniformly in training over all min-max range of history/horizon window sizes]
-	- more in development
+	- K step lookback: ideally the RNN would learn a hidden state representation that ~completely describes state of the system. In realiy, that may be too much to expect. In addition to previous timestep prediction y_i-1, also feed in y_i-2,...,y_i-K for K-step lookback. [~same as using lagged features]
+2) Performance Analysis:
+	- performance analysis of test set SMAPE as function of history/horizon window sizes [randomized uniformly in training over all min-max range of history/horizon window sizes]
+	- 
 2) More features, relevant to my data. More focus on seasonalities, and "spiral encoding" for holidays. Automated data augmentation.
 3) Dealing with holes/sparsity as in my data.
 
 
-1. PREPROCESS.py - Maximize reuse of existing architecture: just put my data in exact same format as Kaggle competition csv's
-2. $source activate gktf.  #previously set up a conda environment w/ Python 3.6, tensorflow 1.4.0, to match same versions as Kaggle solution
-3. $cd ..../kaggle-web-traffic
-4. $python3 PREPROCESS.py
-5. $python3 make_features.py data/vars kaggle daily arturius --add_days=63 #need to specify the data directory (data/vars) and feature_set {kaggle, simple, full, full_w_context} depending on using default Arturius kaggle vs. own custom for this application; and specify sampling period
-python3 make_features.py data/vars kaggle daily full --add_days=63
 
+The complete pipeline is:
+
+1. $source activate gktf.               #previously set up a conda environment w/ Python 3.6, tensorflow 1.4.0, to match same versions as Kaggle solution
+2. $cd ..../kaggle-web-traffic
+4. $python3 PREPROCESS.py               #Maximize reuse of existing architecture: just put my data in exact same format as Kaggle competition csv's
+5. $./MAKEFEATURES_TRAIN_ALL.sh         #For backtestign in chunks method [4 partially overlapping train-test set pairs]
+6. $python3 RUN_ALL_PREDICTIONS.py      #Run predictions for every ID over triplets of (history, horizon, start point)
+7. $python3 PERFORMANCE_HEATMAPS.py     #Analyze the prediction metrics across different dimensions 
+
+
+
+
+
+
+---------------------------------------
 #Just in case making new features
 cd data
 rm -R vars*
@@ -72,76 +52,15 @@ ll data/
 python3 make_features.py data/TRAINset1 ours daily full --add_days=0
 python3 make_features.py data/TESTset1 ours daily full --add_days=0
 
-python3 trainer.py full daily --name=train1 --hparam_set=encdec --n_models=3 --asgd_decay=0.99 --max_steps=11500 --save_from_step=3 --patience=5 --max_epoch=5 --save_epochs_performance
-
-
-
-
-
-
-
-
-#python3 make_features.py train ours daily full --add_days=0
-#python3 make_features.py test ours daily full --add_days=0
-
-#python3 make_features.py data/vars kaggle daily full --add_days=63
-
-python3 trainer.py full daily --name s32 --hparam_set=s32 --n_models=3 --asgd_decay=0.99 --max_steps=11500 --save_from_step=3 --patience=5 --max_epoch=50 --save_epochs_performance
-
-python3 RUN_ALL_PREDICTIONS.py
-
-
-
-
-
-
-----------------------------------------------------------------------------------------------------------------------------------------------------------
-
-#no reason to expect 10000 to 11500 is good range to save out. View loss along the way
-python3 trainer.py arturius daily --name s32 --hparam_set=s32 --n_models=3 --asgd_decay=0.99 --max_steps=11500 --save_from_step=10000
-python3 trainer.py full daily --name s32 --hparam_set=s32 --n_models=3 --asgd_decay=0.99 --max_steps=11500 --save_from_step=10000 --patience=10 --horizon_window_size=50
-python3 trainer.py full daily --name TEST_attn_head --hparam_set=TEST_attn_head --n_models=3 --asgd_decay=0.99 --max_steps=11500 --save_from_step=10000 --patience=10 --horizon_window_size=50
---name TEST_stacked --hparam_set=TEST_stacked
-
---no_eval
---side_split
---max_epoch=1000
---save_from_step=1
---verbose
-
-
-python3 trainer.py full daily --name wEncDec --hparam_set=s32 --n_models=3 --asgd_decay=0.99 --max_steps=11500 --save_from_step=10000 --patience=10 --horizon_window_size=63 --history_window_size=100 --max_epoch=10
-
-python3 trainer.py full daily --name noEncDec --hparam_set=s32 --n_models=3 --asgd_decay=0.99 --max_steps=11500 --save_from_step=10000 --patience=10 --horizon_window_size=63 --history_window_size=100 --max_epoch=10
-
-
-python3 trainer.py full daily --name s32 --hparam_set=s32 --n_models=3 --asgd_decay=0.99 --max_steps=11500 --save_from_step=10 --max_epoch=1000 --patience=50 --verbose --side_split
-
-
-
-
-7. $python3 PREDICT.py
-
-- confirmed it runs with 2 layers stacked GRU (for both encoder and decoder modules), or with attention mechanism. Performance is worse in both cases [SMAPE], at least initially.
-
-- tried bidirectional encoder but has input dimension issues, think about that more later.
-
-
-
-#For doing performance analysis of SMAPE as function of history/horizon window sizes:
-./RUN_MANY_TRAIN_VAL_WINDOWS
+#For backtesting in 4 chunks, no longer do this. Run the script MAKEFEATURES_TRAIN_ALL.py to automate feature making and training all 4 chunks.
+python3 trainer.py full daily --name=TRAINset1 --hparam_set=encdec --n_models=3 --asgd_decay=0.99 --max_steps=11500 --save_from_step=3 --patience=5 --max_epoch=50 --save_epochs_performance
 
 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------
 To do:
-0. SMAPEs on ground truth 2018
-1. why encoder_state NANs in it for small train window lengths [is it train/predict window completeness thresholds?]
-1. performance heatmaps
-
 2. for weekly. monthly inputs, need to change few places in tensorflow code
 3. Prediction intervals
 4. Architecture improvements: bi enc, dilated; randomly dilated; randomly dilated with bounds per layer
-4. K step recursive as hybrid of 1step recursive and K step direct
 4. MLP direct multihorizon
 5. custom attention [e.g. position specific]
 6. VAE aug

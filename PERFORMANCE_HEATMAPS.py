@@ -21,7 +21,7 @@ from collections import defaultdict
 # PARAMETERS
 # =============================================================================
 OUTDIR = 'output'
-
+NAMES = ['TESTset1', 'TESTset2', 'TESTset3', 'TESTset4']
 
 
 
@@ -36,7 +36,7 @@ def load_dict(path):
     return d
     
     
-def aggregate__overall(data_dict, real_only, id_hold_out_list, bad_ids):
+def aggregate__overall(data_dict, real_only, id_subsets, bad_ids):
     """
     For each (history,horizon) pair, marginalized over all id's and dates
     
@@ -52,8 +52,8 @@ def aggregate__overall(data_dict, real_only, id_hold_out_list, bad_ids):
             if '__' in series_id:
                 continue
         #If have a set of holdout id's:
-        if id_hold_out_list:
-            if series_id not in id_hold_out_list:
+        if id_subsets:
+            if series_id not in id_subsets:
                 continue
         #Regardless of mode, if this is one of the corrupted time series, ignore it:
         if series_id in bad_ids:
@@ -140,27 +140,36 @@ if __name__=='__main__':
     #for each of the 4 dicts:
     
     #Make list of id's that were held out from training, to assess transfer ability
-    HOLD_OUTS = [str(i) for i in range(500)]
+    HOLD_OUTS = [str(i) for i in range(500)] #Not actually held out, but just get an idea of performance on earlier ids
+    special_ids = [str(i) for i in [531, 1007, 143, 130, 197, 203, 209, 215, 342, 476, 328, 182, 200, 145, 242, 44, 94, 147, 1, 5, 6, 7, 8, 12, 387, 429, 1005, 943]]
+    id_dict = {'allIDs':[],
+         'special_ids':special_ids,
+         'holdout_ids':HOLD_OUTS}
     
     #Some of the ID's are just bad, have multiple month long gaps from corrupted data, etc., so can ignore them
+    #For now just use everything to get conservative estimate of performance
     BAD_IDs = []#['44','46','581','582','583','584']
     
-    path = os.path.join(OUTDIR,'hist_horiz__all.pickle')
-    data = load_dict(path)
     
-    for real_only in [True,False]:
-        for id_hold_out_list in [HOLD_OUTS,[]]:
-            
-            r = 'real' if real_only else 'realAndsynthetic'
-            h = 'holdoutsOnly' if id_hold_out_list else 'allIDs'
-            name = r+'_'+h
-            print(name)
-            
-            
-            metrics_dict, histories, horizons, metrics_arrays = aggregate__overall(data, real_only, id_hold_out_list, BAD_IDs)
-            make_heatmap(metrics_arrays, histories, horizons, OUTDIR, name)
-            
-            #Save out the metrics dict
-            dict_savename = os.path.join(OUTDIR,f"hist_horiz__{name}__metrics.pickle")
-            with open(dict_savename, "wb") as outp:
-                pickle.dump(metrics_dict, outp)    
+    
+    #For the 4 chunk backtesting performance assessment
+    for chunkname in NAMES:
+        print('chunkname: ',chunkname)    
+        path = os.path.join(OUTDIR,f'hist_horiz__all_{chunkname}.pickle')
+        data = load_dict(path)
+        
+        for real_only in [True,False]:
+            for k, id_subsets in id_dict.items():
+                
+                r = 'real' if real_only else 'realAndsynthetic'
+                name = chunkname + '_' + r + '_' + k
+                print(name)
+                
+                
+                metrics_dict, histories, horizons, metrics_arrays = aggregate__overall(data, real_only, id_subsets, BAD_IDs)
+                make_heatmap(metrics_arrays, histories, horizons, OUTDIR, name)
+                
+                #Save out the metrics dict
+                dict_savename = os.path.join(OUTDIR,f"hist_horiz__{name}__metrics.pickle")
+                with open(dict_savename, "wb") as outp:
+                    pickle.dump(metrics_dict, outp)    
