@@ -286,9 +286,20 @@ if __name__ == '__main__':
             for horizon in HORIZON_SIZES:
                 print('HISTORY ',history, 'of ', HISTORY_SIZES)
                 print('HORIZON ',horizon, 'of ', HORIZON_SIZES)
-                if history+horizon >= data_timesteps:
+                
+                #For the disjoint mode, the test set does not overlap art all w the train set. 
+                #The history + horizon window must completely fit in the test set alone.
+                #vs.
+                #in backtest chunk mode, test set include full train set, but 
+                #horizon window always starts after the train set (so horizon 
+                #is fully inside test set). SO for backtest chunk mode, irrelevant
+                #what history + horizon is, only matters that the horizon is fully inside TEST set.
+                if (PREDICT_MODE=='disjoint') and (history+horizon >= data_timesteps):
                     print(f'history+horizon ({history+horizon}) >= data set size ({data_timesteps})')
                     continue
+                if (PREDICT_MODE=='backtest') and (horizon > data_timesteps):
+                    print(f'horizon ({horizon}) > test region size ({data_timesteps})')
+                    continue                
                 
                 #Get the range of values that will step through for 
                 offs = [i for i in range(horizon, data_timesteps - history +1, EVAL_STEP_SIZE)]
