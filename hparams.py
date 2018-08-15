@@ -87,28 +87,30 @@ params_encdec = dict(
     MLP_POSTPROCESS__KERNEL_SIZE=15,
     MLP_POSTPROCESS__KERNEL_OFFSET=7,
     
-  
-    
     
     # DIRECT MLP DECODER (REPLACE RNN CELLS IN DECODER WITH MLP MODULES, AND DO QUANTILES)
     #Do a direct, quantile forecast by using an MLP as decoder module instead of RNN/LSTM/GRU cells:
     MLP_DIRECT_DECODER=False,
-    LOCAL_CONTEXT_SIZE=64,
-    GLOBAL_CONTEXT_SIZE=256,
-    
-    
+    LOCAL_CONTEXT_SIZE=8,
+    GLOBAL_CONTEXT_SIZE=64,
     
     
     
     # QUANTILE REGRESSION
     # For whatever kind of decoder, whether or not to use quantiles
-    DO_QUANTILES=True,
+    DO_QUANTILES=False,
     #If doing quantile regression in addition to point estimates trained to minimize SMAPE.
     #Also, since SMAPE point estimates are biased positive, can use alternative
-    #point estimator trainde by pinball loss on quantiles < 50 [e.g. 45,38, etc., see what has bias ~0]
-    #To not use quantile regression, just leave list empty
-    QUANTILES = [.45,.47,.48],#[None],#[.20, .30, .40, .50, ,75, .90] #ValueError: Multi-valued hyperparameters cannot be empty: QUANTILES   ->  so make it a list with "None" in it      
-    LAMBDA=.01 #Scale factor for relative weight of quantile loss for the point estimate SMAPE loss
+    #point estimator trainde by pinball loss on quantiles < 50 [e.g. 45,38, etc., see what has bias ~0].
+    #So if doing quantiles, no longer optimizing SMAPE, but report it anyway to see. So, use the 0th element of QUANTILES list is used as the point estimate for SMAPE
+    #(but SMAPE will not be used in loss function: instead will use the average quantile loss (ave over all quantiles))
+    #If not using quantile regression, list is ignored
+    QUANTILES = [.45, .47, .5]#.05, .25, .40, .50, .60, 75, .95]
+    
+    
+    #Losses summed together using lembda weighting. 
+    #Vs. if False, just directly optimize quantile loss and ignore SMAPE [but still look at it for TEST sets]
+    #LAMBDA=.01 #Scale factor for relative weight of quantile loss for the point estimate SMAPE loss. Only relevant if SMAPE_AND_QUANTILE=True
 )
 
 

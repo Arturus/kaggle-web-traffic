@@ -22,7 +22,7 @@ from pandas import ExcelWriter
 # PARAMETRS
 # =============================================================================
 #For histories, we care most about shorter series, so sample lower numbers more densely
-HISTORY_SIZES=[7,8,10,12,15,20,30,50,100,200,360]
+HISTORY_SIZES=[7,8,10,12,15,20,30,50,100]#,200,360]
 HORIZON_SIZES=[7,8,10,12,15,20,30,60]
 EVAL_STEP_SIZE=4#step size for evaluation. 1 means use every single day as a FCT to evaluate on. E.g. 3 means step forward 3 timesteps between each FCT to evaluate on.
 PREDICT_MODE = 'backtest'#'disjoint'
@@ -372,7 +372,7 @@ if __name__ == '__main__':
                     cols.remove('Page')
                     cols = ['Page'] + cols
                     f_preds = f_preds[cols]                 
-                    print(f_preds)
+#                    print(f_preds)
                     
                     dflist += [f_preds]
                     #Care about the metrics within different partitions:
@@ -389,7 +389,7 @@ if __name__ == '__main__':
                 #each sheet is for a single backoffset, so each sheet contains all ~1800 id's
     
         
-        print(hist_horiz__all)
+#        print(hist_horiz__all)
         t1 = time.clock()
         print('elapsed time: ',t1-t0)
         #Now that all metrics stored in dict, save dict, and analyze further

@@ -248,9 +248,9 @@ class MultiModelTrainer:
         ops = [self.inc_step] + self.global_ops
         for trainer in self.active():
             ops.extend(trainer.train_ops)
-        print('ops', ops)
+#        print('ops', ops)
         results = self._metric_step(Stage.TRAIN, ops, sess, epoch, summary_every=20)
-        print('results: ', results)
+#        print('results: ', results)
         #return results[:len(self.global_ops) + 1] # step, grad_norm
         return results[0]
 
@@ -270,133 +270,6 @@ class MultiModelTrainer:
         return len(self.active())
 
 
-#class ModelTrainer:
-#    def __init__(self, train_model, eval_model, model_no=0, summary_writer=None, keep_best=5, patience=None):
-#        self.train_model = train_model
-#        self.eval_model = eval_model
-#        self.stopped = False
-#        self.smooth_train_mae = Ema()
-#        self.smooth_train_smape = Ema()
-#        self.smooth_eval_mae = Ema(0.5)
-#        self.smooth_eval_smape = Ema(0.5)
-#        self.smooth_grad = Ema(0.9)
-#        self.summary_writer = summary_writer
-#        self.model_no = model_no
-#        self.best_top_n_loss = []
-#        self.keep_best = keep_best
-#        self.best_step = 0
-#        self.patience = patience
-#        self.train_pipe = train_model.inp
-#        self.eval_pipe = eval_model.inp
-#        self.epoch_mae = []
-#        self.epoch_smape = []
-#        self.last_epoch = -1
-#
-#    @property
-#    def train_ops(self):
-#        model = self.train_model
-#        return [model.train_op, model.update_ema, model.summaries, model.mae, model.smape, model.glob_norm]
-#
-#    def process_train_results(self, run_results, offset, global_step, write_summary):
-#        offset += 2
-#        summaries, mae, smape, glob_norm = run_results[offset:offset + 4]
-#        results = self.smooth_train_mae(mae), self.smooth_train_smape(smape), self.smooth_grad(glob_norm)
-#        if self.summary_writer and write_summary:
-#            self.summary_writer.add_summary(summaries, global_step=global_step)
-#        return np.array(results)
-#
-#    @property
-#    def eval_ops(self):
-#        model = self.eval_model
-#        return [model.mae, model.smape]
-#
-#    @property
-#    def eval_len(self):
-#        return len(self.eval_ops)
-#
-#    @property
-#    def train_len(self):
-#        return len(self.train_ops)
-#
-#    @property
-#    def best_top_loss(self):
-#        return -np.array(self.best_top_n_loss).mean()
-#
-#    @property
-#    def best_epoch_mae(self):
-#        return min(self.epoch_mae) if self.epoch_mae else np.NaN
-#
-#    @property
-#    def mean_epoch_mae(self):
-#        return np.mean(self.epoch_mae) if self.epoch_mae else np.NaN
-#
-#    @property
-#    def mean_epoch_smape(self):
-#        return np.mean(self.epoch_smape) if self.epoch_smape else np.NaN
-#
-#    @property
-#    def best_epoch_smape(self):
-#        return min(self.epoch_smape) if self.epoch_smape else np.NaN
-#
-#    def remember_for_epoch(self, epoch, mae, smape):
-#        if epoch > self.last_epoch:
-#            self.last_epoch = epoch
-#            self.epoch_mae = []
-#            self.epoch_smape = []
-#        self.epoch_mae.append(mae)
-#        self.epoch_smape.append(smape)
-#
-#    @property
-#    def best_epoch_metrics(self):
-#        return np.array([self.best_epoch_mae, self.best_epoch_smape])
-#
-#    @property
-#    def mean_epoch_metrics(self):
-#        return np.array([self.mean_epoch_mae, self.mean_epoch_smape])
-#
-#    def process_eval_results(self, run_results, offset, global_step, epoch):
-#        totals = np.zeros(self.eval_len, np.float)
-#        for result in run_results:
-#            items = np.array(result[offset:offset + self.eval_len])
-#            totals += items
-#        results = totals / len(run_results)
-#        mae, smape = results
-#        if self.summary_writer and global_step > 200:
-#            summary = tf.Summary(value=[
-#                tf.Summary.Value(tag=f"test/MAE_{self.model_no}", simple_value=mae),
-#                tf.Summary.Value(tag=f"test/SMAPE_{self.model_no}", simple_value=smape),
-#            ])
-#            self.summary_writer.add_summary(summary, global_step=global_step)
-#        smooth_mae = self.smooth_eval_mae(mae)
-#        smooth_smape = self.smooth_eval_smape(smape)
-#        self.remember_for_epoch(epoch, mae, smape)
-#
-#        current_loss = -smooth_smape
-#
-#        prev_best_n = np.mean(self.best_top_n_loss) if self.best_top_n_loss else -np.inf
-#        if self.best_top_n_loss:
-#            log.debug("Current loss=%.3f, old best=%.3f, wait steps=%d", -current_loss,
-#                      -max(self.best_top_n_loss), global_step - self.best_step)
-#
-#        if len(self.best_top_n_loss) >= self.keep_best:
-#            heapq.heappushpop(self.best_top_n_loss, current_loss)
-#        else:
-#            heapq.heappush(self.best_top_n_loss, current_loss)
-#        log.debug("Best loss=%.3f, top_5 avg loss=%.3f, top_5=%s",
-#                  -max(self.best_top_n_loss), -np.mean(self.best_top_n_loss),
-#                  ",".join(["%.3f" % -mae for mae in self.best_top_n_loss]))
-#        new_best_n = np.mean(self.best_top_n_loss)
-#
-#        new_best = new_best_n > prev_best_n
-#        if new_best:
-#            self.best_step = global_step
-#            log.debug("New best step %d, current loss=%.3f", global_step, -current_loss)
-#        else:
-#            step_count = global_step - self.best_step
-#            if step_count > self.patience:
-#                self.stopped = True
-#
-#        return mae, smape, new_best, smooth_mae, smooth_smape
 
 
 def train(features_set, sampling_period, name, hparams, multi_gpu=False, n_models=1, train_completeness_threshold=0.01,
@@ -458,7 +331,7 @@ def train(features_set, sampling_period, name, hparams, multi_gpu=False, n_model
 #        metrics = []
         history = np.random.randint(low=hparams.history_window_size_minmax[0],high=hparams.history_window_size_minmax[1]+1)
         horizon = np.random.randint(low=hparams.horizon_window_size_minmax[0],high=hparams.horizon_window_size_minmax[1]+1)        
-        print('random draw: history, horizon', history, horizon)
+#        print('random draw: history, horizon', history, horizon)
 #        attn_window = history - horizon + 1
 #        max_train_empty = min(history-1, int(np.floor(history * (1 - TT.train_model.inp.train_completeness_threshold))))
 #        max_predict_empty = int(np.floor(horizon * (1 - TT.train_model.inp.predict_completeness_threshold)))   

@@ -17,7 +17,7 @@ train_names="TRAINset1 TRAINset2 TRAINset3 TRAINset4"
 #In training, max number of epochs to do. By 25-50 things have usually plateaud
 MAX_EPOCH=50
 
-train_names="TRAINset4"
+
 
 
 if $MAKE_FEATURESETS; then
