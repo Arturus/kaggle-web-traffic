@@ -20,7 +20,7 @@ from collections import defaultdict
 # =============================================================================
 # PARAMETERS
 # =============================================================================
-OUTDIR = 'output'
+OUTDIR = 'output/redo_full'
 NAMES = ['TESTset1', 'TESTset2', 'TESTset3', 'TESTset4']
 
 
@@ -120,8 +120,13 @@ def make_heatmap(metrics_arrays, histories, horizons, outdir, name):
         plt.ylabel('History',fontsize=15)
         plt.xticks(np.arange(len(horizons)),horizons,fontsize=15)
         plt.yticks(np.arange(len(histories)),histories,fontsize=15)
+        
+        for x, hor in enumerate(np.arange(len(horizons))):
+            for y, hist in enumerate(np.arange(len(histories))):
+                s = np.round(v[y,x],1)
+                plt.text(x, y, s)
     #    plt.grid()
-        savepath = os.path.join(outdir,f'history_horizon_heatmap__{savename}.png')
+        savepath = os.path.join(outdir,f'{savename}.png')
         plt.savefig(savepath)
     
     
@@ -152,10 +157,46 @@ if __name__=='__main__':
     
     
     
+    
+    # =============================================================================
+    # Aggregated over all 4 test sets                
+    # =============================================================================
+    all_data = {}
+    for chunkname in NAMES:
+        print('chunkname: ',chunkname)    
+        path = os.path.join(OUTDIR,f'hist_horiz__{chunkname}.pickle')
+        data = load_dict(path)    
+        new_data = {k+(chunkname,): v for k,v in data.items()}
+        all_data.update(new_data)
+    
+    for real_only in [True,False]:
+        for k, id_subsets in id_dict.items():
+            
+            r = 'real' if real_only else 'realAndsynthetic'
+            name = '4Ave' + '_' + r + '_' + k
+            print(name)
+            
+            
+            metrics_dict, histories, horizons, metrics_arrays = aggregate__overall(all_data, real_only, id_subsets, BAD_IDs)
+            make_heatmap(metrics_arrays, histories, horizons, OUTDIR, name)
+            
+            #Save out the metrics dict
+            dict_savename = os.path.join(OUTDIR,f"hist_horiz__{name}__allchunks__metrics.pickle")
+            with open(dict_savename, "wb") as outp:
+                pickle.dump(metrics_dict, outp)    
+    
+    
+    
+    f=fffffffffff
+    
+    
+    # =============================================================================
+    # Individual test sets
+    # =============================================================================
     #For the 4 chunk backtesting performance assessment
     for chunkname in NAMES:
         print('chunkname: ',chunkname)    
-        path = os.path.join(OUTDIR,f'hist_horiz__all_{chunkname}.pickle')
+        path = os.path.join(OUTDIR,f'hist_horiz__{chunkname}.pickle')
         data = load_dict(path)
         
         for real_only in [True,False]:
@@ -173,3 +214,13 @@ if __name__=='__main__':
                 dict_savename = os.path.join(OUTDIR,f"hist_horiz__{name}__metrics.pickle")
                 with open(dict_savename, "wb") as outp:
                     pickle.dump(metrics_dict, outp)    
+                    
+                    
+                    
+                     
+                    
+                    
+   
+                    
+                    
+                    

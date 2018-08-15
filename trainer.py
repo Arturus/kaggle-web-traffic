@@ -164,7 +164,7 @@ class ModelTrainerV2:
         self.summary_writer = summary_writer
 
         def std_metrics(model: Model, smoothness):
-            return [Metric('SMAPE', model.smape, smoothness), Metric('MAE', model.mae, smoothness)]
+            return [Metric('SMAPE', model.smape, smoothness), Metric('MAE', model.mae, smoothness), Metric('qntl', model.ave_quantile_loss, smoothness)]
 
         self._metrics = {Stage.TRAIN: std_metrics(train_model, 0.9) + [Metric('GrNorm', train_model.glob_norm)]}
         for stage, model in eval:
@@ -463,19 +463,15 @@ def train(features_set, sampling_period, name, hparams, multi_gpu=False, n_model
 #        max_train_empty = min(history-1, int(np.floor(history * (1 - TT.train_model.inp.train_completeness_threshold))))
 #        max_predict_empty = int(np.floor(horizon * (1 - TT.train_model.inp.predict_completeness_threshold)))   
         for TT in trainer.trainers:
-#            TT.train_model.inp.history_window_size = history
-#            TT.train_model.inp.horizon_window_size = horizon
-#            TT.train_model.inp.attn_window = history - horizon + 1
-#            TT.train_model.inp.max_train_empty = min(history-1, int(np.floor(history * (1 - TT.train_model.inp.train_completeness_threshold))))
-#            TT.train_model.inp.max_predict_empty = int(np.floor(horizon * (1 - TT.train_model.inp.predict_completeness_threshold)))   
-##            TT.train_model.inp = InputPipeline
-##            TT.train_model.init(sess)
-#            TT.train_model.inp.inp.restore(sess)
-#            TT.train_model.inp.init_iterator(sess)
-            
-            #TT.train_model.inp = 77777
-#            TT.train_model = 77777
-            pass
+            TT.train_model.inp.history_window_size = history
+            TT.train_model.inp.horizon_window_size = horizon
+            TT.train_model.inp.attn_window = history - horizon + 1
+            TT.train_model.inp.max_train_empty = min(history-1, int(np.floor(history * (1 - TT.train_model.inp.train_completeness_threshold))))
+            TT.train_model.inp.max_predict_empty = int(np.floor(horizon * (1 - TT.train_model.inp.predict_completeness_threshold)))   
+#            TT.train_model.inp = InputPipeline
+#            TT.train_model.init(sess)
+            TT.train_model.inp.inp.restore(sess)
+            TT.train_model.inp.init_iterator(sess)
             
             
             
@@ -616,19 +612,24 @@ def train(features_set, sampling_period, name, hparams, multi_gpu=False, n_model
     if forward_split and do_eval:
         eval_smape = trainer.metric(Stage.EVAL_FRWD, 'SMAPE')
         eval_mae = trainer.metric(Stage.EVAL_FRWD, 'MAE')
+        eval_qntl = trainer.metric(Stage.EVAL_FRWD, 'qntl')
     else:
         eval_smape = DummyMetric()
         eval_mae = DummyMetric()
+        eval_qntl = DummyMetric()
 
     if side_split and do_eval:
         eval_mae_side = trainer.metric(Stage.EVAL_SIDE, 'MAE')
         eval_smape_side = trainer.metric(Stage.EVAL_SIDE, 'SMAPE')
+        eval_qntl_side = trainer.metric(Stage.EVAL_SIDE, 'qntl')
     else:
         eval_mae_side = DummyMetric()
         eval_smape_side = DummyMetric()
+        eval_qntl_side = DummyMetric()
 
     train_smape = trainer.metric(Stage.TRAIN, 'SMAPE')
     train_mae = trainer.metric(Stage.TRAIN, 'MAE')
+    train_qntl = trainer.metric(Stage.TRAIN, 'qntl')
     grad_norm = trainer.metric(Stage.TRAIN, 'GrNorm')
     eval_stages = []
     ema_eval_stages = []
@@ -718,8 +719,9 @@ def train(features_set, sampling_period, name, hparams, multi_gpu=False, n_model
                 MAE = "%.3f/%.3f/%.3f" % (eval_mae.last, eval_mae_side.last, train_mae.last)
                 improvement = '↑' if eval_smape.improved else ' '
                 SMAPE = "%s%.3f/%.3f/%.3f" % (improvement, eval_smape.last, eval_smape_side.last,  train_smape.last)
+                qntl = "%.3f/%.3f/%.3f" % (eval_qntl.last, eval_qntl_side.last, train_qntl.last)
                 if tqdm:
-                    tqr.set_postfix(gr=grad_norm.last, MAE=MAE, SMAPE=SMAPE)
+                    tqr.set_postfix(gr=grad_norm.last, MAE=MAE, SMAPE=SMAPE, qntl=qntl)
                 if not trainer.has_active() or (max_steps and step > max_steps):
                     break
 
@@ -742,14 +744,18 @@ def train(features_set, sampling_period, name, hparams, multi_gpu=False, n_model
                 ",".join(["%.3f" % m.top for m in eval_smape.metrics]))
 
             if trainer.has_active():
-                status += ", frwd/side best MAE=%.3f/%.3f, SMAPE=%.3f/%.3f; avg MAE=%.3f/%.3f, SMAPE=%.3f/%.3f, %d active models" % \
-                          (eval_mae.best_epoch, eval_mae_side.best_epoch, eval_smape.best_epoch, eval_smape_side.best_epoch,
-                           eval_mae.avg_epoch,  eval_mae_side.avg_epoch,  eval_smape.avg_epoch,  eval_smape_side.avg_epoch,
-                           trainer.has_active())
+#                status += ", frwd/side best MAE=%.3f/%.3f, SMAPE=%.3f/%.3f; avg MAE=%.3f/%.3f, SMAPE=%.3f/%.3f, %d active models" % \
+#                          (eval_mae.best_epoch, eval_mae_side.best_epoch, eval_smape.best_epoch, eval_smape_side.best_epoch,
+#                           eval_mae.avg_epoch,  eval_mae_side.avg_epoch,  eval_smape.avg_epoch,  eval_smape_side.avg_epoch,
+#                           trainer.has_active())
+                status += ", frwd/side best MAE=%.3f/%.3f, SMAPE=%.3f/%.3f, qntl=%.3f/%.3f; avg MAE=%.3f/%.3f, SMAPE=%.3f/%.3f, , qntl=%.3f/%.3f; %d active models" % \
+                          (eval_mae.best_epoch, eval_mae_side.best_epoch, eval_smape.best_epoch, eval_smape_side.best_epoch, eval_qntl.best_epoch, eval_qntl_side.best_epoch,
+                           eval_mae.avg_epoch,  eval_mae_side.avg_epoch,  eval_smape.avg_epoch,  eval_smape_side.avg_epoch, eval_qntl.avg_epoch, eval_qntl_side.avg_epoch,
+                           trainer.has_active())                
                 print(status, file=sys.stderr)
                 if save_epochs_performance:
-                    output_list.append([eval_mae.best_epoch, eval_mae_side.best_epoch, eval_smape.best_epoch, eval_smape_side.best_epoch,
-                               eval_mae.avg_epoch,  eval_mae_side.avg_epoch,  eval_smape.avg_epoch,  eval_smape_side.avg_epoch,
+                    output_list.append([eval_mae.best_epoch, eval_mae_side.best_epoch, eval_smape.best_epoch, eval_smape_side.best_epoch, eval_qntl.best_epoch, eval_qntl_side.best_epoch,
+                               eval_mae.avg_epoch,  eval_mae_side.avg_epoch,  eval_smape.avg_epoch,  eval_smape_side.avg_epoch, eval_qntl.avg_epoch, eval_qntl_side.avg_epoch,
                                trainer.has_active()])
             else:
                 print(status, file=sys.stderr)

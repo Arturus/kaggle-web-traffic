@@ -93,6 +93,11 @@ params_encdec = dict(
     # DIRECT MLP DECODER (REPLACE RNN CELLS IN DECODER WITH MLP MODULES, AND DO QUANTILES)
     #Do a direct, quantile forecast by using an MLP as decoder module instead of RNN/LSTM/GRU cells:
     MLP_DIRECT_DECODER=False,
+    LOCAL_CONTEXT_SIZE=64,
+    GLOBAL_CONTEXT_SIZE=256,
+    
+    
+    
     
     
     # QUANTILE REGRESSION
@@ -103,6 +108,7 @@ params_encdec = dict(
     #point estimator trainde by pinball loss on quantiles < 50 [e.g. 45,38, etc., see what has bias ~0]
     #To not use quantile regression, just leave list empty
     QUANTILES = [.45,.47,.48],#[None],#[.20, .30, .40, .50, ,75, .90] #ValueError: Multi-valued hyperparameters cannot be empty: QUANTILES   ->  so make it a list with "None" in it      
+    LAMBDA=.01 #Scale factor for relative weight of quantile loss for the point estimate SMAPE loss
 )
 
 

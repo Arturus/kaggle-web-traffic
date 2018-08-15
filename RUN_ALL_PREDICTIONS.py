@@ -8,7 +8,7 @@ import os
 import pandas as pd
 import numpy as np
 from trainer import predict
-from hparams import build_hparams
+#from hparams import build_hparams
 import hparams
 
 from make_features import read_all
@@ -23,7 +23,7 @@ from pandas import ExcelWriter
 # =============================================================================
 #For histories, we care most about shorter series, so sample lower numbers more densely
 HISTORY_SIZES=[7,8,10,12,15,20,30,50,100,200,360]
-HORIZON_SIZES=[7,10,14,20,30,60]
+HORIZON_SIZES=[7,8,10,12,15,20,30,60]
 EVAL_STEP_SIZE=4#step size for evaluation. 1 means use every single day as a FCT to evaluate on. E.g. 3 means step forward 3 timesteps between each FCT to evaluate on.
 PREDICT_MODE = 'backtest'#'disjoint'
 NAMES = ['TESTset1', 'TESTset2', 'TESTset3', 'TESTset4']
@@ -302,8 +302,12 @@ if __name__ == '__main__':
                     continue                
                 
                 #Get the range of values that will step through for 
-                offs = [i for i in range(horizon, data_timesteps - history +1, EVAL_STEP_SIZE)]
-                
+                if (PREDICT_MODE=='disjoint'):
+                    offs = [i for i in range(horizon, data_timesteps - history +1, EVAL_STEP_SIZE)]
+                if (PREDICT_MODE=='backtest'):
+                    offs = [i for i in range(horizon, data_timesteps+1, EVAL_STEP_SIZE)]
+
+
                 dflist = []
                 for backoffset in offs:
                     print('backoffset ',backoffset, 'of ', offs)
@@ -381,7 +385,7 @@ if __name__ == '__main__':
                 savename = f"{str(history)}_{str(horizon)}_{name}.xls"
                 savename = os.path.join(OUTPUT_DIR,savename)
                 sheetnames = [str(i) for i in offs]
-                SaveMultisheetXLS(dflist, sheetnames, savename)
+#                SaveMultisheetXLS(dflist, sheetnames, savename)
                 #each sheet is for a single backoffset, so each sheet contains all ~1800 id's
     
         
@@ -391,6 +395,6 @@ if __name__ == '__main__':
         #Now that all metrics stored in dict, save dict, and analyze further
         #pickle ... hist_horiz__all
     #    print(hist_horiz__all)
-        dict_savename = os.path.join(OUTPUT_DIR,f"hist_horiz__all_{name}.pickle")
+        dict_savename = os.path.join(OUTPUT_DIR,f"hist_horiz__{name}.pickle")
         with open(dict_savename, "wb") as outp:
             pickle.dump(hist_horiz__all, outp)#, protocol=2)

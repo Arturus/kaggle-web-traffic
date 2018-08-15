@@ -289,7 +289,19 @@ def decode_predictions(decoder_readout, inp: InputPipe):#!!!!!quantiles
     return ret
 
 
-def calc_loss(predictions, true_y, additional_mask=None, DO_QUANTILES=False):
+def quantile_loss(true, predicted, weights, quantile):
+    """
+    When doing quantile regression, get the pinball loss on each quantile
+    """
+    n_valid = tf.reduce_sum(weights)
+    true_o = tf.round(tf.expm1(true))
+    pred_o = tf.maximum(tf.round(tf.expm1(predicted)), 0.0)
+    diff = tf.subtract(true, predicted)
+    pinball = tf.reduce_mean(tf.maximum(quantile*diff, (quantile-1.)*diff))
+    return tf.reduce_sum(pinball * weights) / n_valid
+
+
+def calc_loss(predictions, true_y, additional_mask=None, DO_QUANTILES=False, QUANTILES=[]):
     """
     Calculates losses, ignoring NaN true values (assigning zero loss to them)
     :param predictions: Predicted values
@@ -310,12 +322,16 @@ def calc_loss(predictions, true_y, additional_mask=None, DO_QUANTILES=False):
     
     if DO_QUANTILES:
         quantile_losses = []
-        #...
+        for nn, q in enumerate(QUANTILES):
+            quantile_losses.extend([quantile_loss(true_y, predictions[nn+1], weights, q)])
+        #For the total quantile loss, use the mean loss over all quantiles
+        ave_quantile_loss = tf.reduce_mean(quantile_losses)
     else:
-        quantile_losses = None
+        ave_quantile_loss = 0.
+        quantile_losses = []
         
     return mae_loss, smape_loss(true_y, predictions, weights), calc_smape_rounded(true_y, predictions,
-                                                                                  weights), tf.size(true_y)
+                                                                                  weights), tf.size(true_y), ave_quantile_loss, quantile_losses
 
 
 def make_train_op(loss, ema_decay=None, prefix=None):#!!!!!quantiles
@@ -452,10 +468,16 @@ class Model:
         self.hparams = hparams
         self.seed = seed
         self.inp = inp
+        
         self.DO_MLP_POSTPROCESS = self.hparams.DO_MLP_POSTPROCESS
         self.lookback_K_actual = min(hparams.LOOKBACK_K, hparams.history_window_size_minmax[0])
         print('self.lookback_K_actual',self.lookback_K_actual)
-
+        self.MLP_DIRECT_DECODER = self.hparams.MLP_DIRECT_DECODER
+        self.DO_QUANTILES = self.hparams.DO_QUANTILES
+        self.LAMBDA = self.hparams.LAMBDA
+        assert not (self.MLP_DIRECT_DECODER and self.DO_MLP_POSTPROCESS), 'Cannot do both DO_MLP_POSTPROCESS and MLP_DIRECT_DECODER.\n Choose exactly 1, or neither.'
+ 
+        
 
 
 #        with tf.Graph().as_default():
@@ -521,7 +543,7 @@ class Model:
                                                         summary_z if hparams.RECURSIVE_W_ENCODER_CONTEXT else None,
                                                         inp.time_y, inp.norm_x[:, -self.lookback_K_actual:]) #in decoder function def:   inp.time_y = "prediction_inputs";  inp.norm_x[:, -1] = "previous_y" (i.e. the final x normalizd))
         
-        decoder_targets = tf.Print(decoder_targets,['decoder_targets BEFORE',tf.shape(decoder_targets),decoder_targets,'decoder_outputs',tf.shape(decoder_outputs),decoder_outputs])
+#        decoder_targets = tf.Print(decoder_targets,['decoder_targets BEFORE',tf.shape(decoder_targets),decoder_targets,'decoder_outputs',tf.shape(decoder_outputs),decoder_outputs])
         
         
         
@@ -538,9 +560,16 @@ class Model:
                                                    inp.time_x, 
                                                    summary_z if hparams.RECURSIVE_W_ENCODER_CONTEXT else None, 
                                                    self.actual_kernel_size, self.offset, None)
-        decoder_targets = tf.Print(decoder_targets,['decoder_targets AFTER postprocess',decoder_targets,'decoder_outputs',decoder_outputs])        
+#        decoder_targets = tf.Print(decoder_targets,['decoder_targets AFTER postprocess',decoder_targets,'decoder_outputs',decoder_outputs])        
 #        decoder_targets = tf.Print(decoder_targets,['encoder_state',encoder_state,'inp.time_y',inp.time_y,'inp.norm_x',inp.norm_x])
 #        decoder_targets = tf.Print(decoder_targets,['decoder_targets',decoder_targets,'decoder_outputs',decoder_outputs])
+        
+        #Vs. if doing the direct MLP decoder (while loop of MLP's instead of while loop of RNN cells):
+        elif self.MLP_DIRECT_DECODER:
+            #LOCAL_CONTEXT_SIZE=64,
+            #GLOBAL_CONTEXT_SIZE=256,
+            pass
+        
         
         
         # Decoder activation losses
@@ -561,11 +590,6 @@ class Model:
         #!!!!!! for now just see if helps. ignore last nodes, only use 0th.
         self.predictions = self.predictions[0] #Now is batch x time
         
-        
-        
-#        if self.hparams.DO_QUANTILES:
-#            pass
-
 
         # Calculate losses and build training op
         if inp.mode == ModelMode.PREDICT:
@@ -580,20 +604,20 @@ class Model:
                     ema_vars = variables
                 self.ema.apply(ema_vars)
         else:
-            self.mae, smape_loss, self.smape, self.loss_item_count = calc_loss(self.predictions, inp.true_y,
-                                                                               additional_mask=loss_mask)
+            self.mae, smape_loss, self.smape, self.loss_item_count, self.ave_quantile_loss, self.quantile_losses = calc_loss(self.predictions, inp.true_y,
+                                                                               additional_mask=loss_mask,
+                                                                               DO_QUANTILES=self.hparams.DO_QUANTILES,
+                                                                               QUANTILES=self.hparams.QUANTILES)
             #from calc_loss:
             #mae_loss, smape_loss(true_y, predictions, weights), calc_smape_rounded(true_y, predictions, weights), tf.size(true_y)
             
-#            if hparams.DO_QUANTILES:
-#                quantile_loss = aaaaaa
-#                self.quantile_losses = {q:aaaaaa for q in self.QUANTILES}
             
             if is_train:
                 # Sum all losses
-                total_loss = smape_loss + enc_stab_loss + dec_stab_loss + enc_activation_loss + dec_activation_loss  #!!!!!!!! put in pinball loss instead of SMAPE when doing quantiles
-#                if hparams.DO_QUANTILES:
-#                    total_loss += quantile_loss
+                total_loss = smape_loss + enc_stab_loss + dec_stab_loss + enc_activation_loss + dec_activation_loss
+                #For quantile regression: just include a term for sum over all quantile losses [weights every quantile equally]
+                if self.hparams.DO_QUANTILES:
+                    total_loss += self.LAMBDA * self.ave_quantile_loss
                 self.train_op, self.glob_norm, self.ema = make_train_op(total_loss, asgd_decay, prefix=graph_prefix)
 
 
@@ -1014,3 +1038,6 @@ class Model:
 
 
 #Direct MLP decoder...
+#            MLP_DIRECT_DECODER=False,
+#    LOCAL_CONTEXT_SIZE=64,
+#    GLOBAL_CONTEXT_SIZE=256,
