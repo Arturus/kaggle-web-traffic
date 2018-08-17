@@ -20,7 +20,7 @@ from collections import defaultdict
 # =============================================================================
 # PARAMETERS
 # =============================================================================
-OUTDIR = 'output/redo_full'
+OUTDIR = 'output'
 NAMES = ['TESTset1', 'TESTset2', 'TESTset3', 'TESTset4']
 
 
@@ -83,7 +83,7 @@ def aggregate__overall(data_dict, real_only, id_subsets, bad_ids):
 #    print(horizons)
     
     metrics_arrays = {}
-    for metric in ['mean','median']:
+    for metric in ['mean','median', 'sd','5pctl','95pctl']:
         _array = np.nan * np.ones((len(histories),len(horizons)))
         for k,v in metrics_dict.items():
             i = histories.index(k[0])
@@ -124,7 +124,7 @@ def make_heatmap(metrics_arrays, histories, horizons, outdir, name):
         for x, hor in enumerate(np.arange(len(horizons))):
             for y, hist in enumerate(np.arange(len(histories))):
                 s = np.round(v[y,x],1)
-                plt.text(x, y, s)
+                plt.text(x-.7, y, s)
     #    plt.grid()
         savepath = os.path.join(outdir,f'{savename}.png')
         plt.savefig(savepath)
@@ -187,7 +187,6 @@ if __name__=='__main__':
     
     
     
-    f=fffffffffff
     
     
     # =============================================================================

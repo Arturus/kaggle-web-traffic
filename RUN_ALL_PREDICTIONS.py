@@ -8,7 +8,7 @@ import os
 import pandas as pd
 import numpy as np
 from trainer import predict
-#from hparams import build_hparams
+from hparams import build_hparams
 import hparams
 
 from make_features import read_all
@@ -385,7 +385,7 @@ if __name__ == '__main__':
                 savename = f"{str(history)}_{str(horizon)}_{name}.xls"
                 savename = os.path.join(OUTPUT_DIR,savename)
                 sheetnames = [str(i) for i in offs]
-#                SaveMultisheetXLS(dflist, sheetnames, savename)
+                SaveMultisheetXLS(dflist, sheetnames, savename)
                 #each sheet is for a single backoffset, so each sheet contains all ~1800 id's
     
         

@@ -351,7 +351,7 @@ def calc_loss(hparams, predictions, true_y, additional_mask=None):#, DO_QUANTILE
         ave_quantile_loss = tf.constant(0.,dtype=tf.float32)
         quantile_losses = []            
             
-    if hparams.DO_MLP_POSTPROCESS or hparams.DO_MLP_POSTPROCESS:
+    if hparams.DO_MLP_POSTPROCESS or hparams.MLP_DIRECT_DECODER:
         mae_loss = tf.losses.absolute_difference(labels=true_y, predictions=predictions[0], weights=weights)
         csr = calc_smape_rounded(true_y, predictions[0], weights)
         sl = smape_loss(true_y, predictions[0], weights) 
@@ -565,18 +565,27 @@ class Model:
 
         print('building decoder')
 
-        # Run decoder
+        # Run (regular RNN-based) decoder
         #... = decoder(encoder_state, attn_features, prediction_inputs, previous_y)
-        decoder_targets, decoder_outputs = self.decoder(encoder_state,
-                                                        attn_features if hparams.use_attn else None,
-                                                        summary_z if hparams.RECURSIVE_W_ENCODER_CONTEXT else None,
-                                                        inp.time_y, inp.norm_x[:, -self.lookback_K_actual:]) #in decoder function def:   inp.time_y = "prediction_inputs";  inp.norm_x[:, -1] = "previous_y" (i.e. the final x normalizd))
-        
-#        decoder_targets = tf.Print(decoder_targets,['decoder_targets BEFORE',tf.shape(decoder_targets),decoder_targets,'decoder_outputs',tf.shape(decoder_outputs),decoder_outputs])
-        
-        
-        
+        if not self.MLP_DIRECT_DECODER:
+            decoder_targets, decoder_outputs = self.decoder(encoder_state,
+                                                            attn_features if hparams.use_attn else None,
+                                                            summary_z if hparams.RECURSIVE_W_ENCODER_CONTEXT else None,
+                                                            inp.time_y, inp.norm_x[:, -self.lookback_K_actual:]) #in decoder function def:   inp.time_y = "prediction_inputs";  inp.norm_x[:, -1] = "previous_y" (i.e. the final x normalizd))
+
+        #Vs. if doing the direct MLP decoder (while loop of MLP's instead of while loop of RNN cells):
+        elif self.MLP_DIRECT_DECODER:
+            decoder_targets, decoder_outputs = self.direct_decoder(inp.time_y,  #
+                                                   summary_z, 
+                                                   self.hparams.LOCAL_CONTEXT_SIZE, 
+                                                   self.hparams.GLOBAL_CONTEXT_SIZE, 
+                                                   None)
+
         #If doing the MLP postprocessing step to adjust predictions:
+        #Technically, you could do this in addition to MLP_DIRECT_DECODER if direct_decoder was outputting point estimates only.
+        #Or could change postprocess to also refine quantiles.
+        #But this is overkill. Only allowed to use 0 or 1 of [MLP_DIRECT_DECODER, DO_MLP_POSTPROCESS]
+#        decoder_targets = tf.Print(decoder_targets,['decoder_targets BEFORE',tf.shape(decoder_targets),decoder_targets,'decoder_outputs',tf.shape(decoder_outputs),decoder_outputs])
         if self.DO_MLP_POSTPROCESS:
             #Could 0 pad, but for now instead just ensure kernelsize and offset are such that
             #thre are no encoder-side issues with kernel extending beyond history (relevant for very short histories)
@@ -593,17 +602,12 @@ class Model:
 #        decoder_targets = tf.Print(decoder_targets,['encoder_state',encoder_state,'inp.time_y',inp.time_y,'inp.norm_x',inp.norm_x])
 #        decoder_targets = tf.Print(decoder_targets,['decoder_targets',decoder_targets,'decoder_outputs',decoder_outputs])
         
-        #Vs. if doing the direct MLP decoder (while loop of MLP's instead of while loop of RNN cells):
-        elif self.MLP_DIRECT_DECODER:
-            #LOCAL_CONTEXT_SIZE=64,
-            #GLOBAL_CONTEXT_SIZE=256,
-            pass
-        
-        
+
         
         # Decoder activation losses
-        dec_stab_loss = rnn_stability_loss(decoder_outputs, hparams.decoder_stability_loss / inp.horizon_window_size)
-        dec_activation_loss = rnn_activation_loss(decoder_outputs, hparams.decoder_activation_loss / inp.horizon_window_size)
+        #If doing the Direct MLP decoder, there is no RNN decoder output, so these losses are not applicable, set to 0.
+        dec_stab_loss = rnn_stability_loss(decoder_outputs, hparams.decoder_stability_loss / inp.horizon_window_size) if not self.MLP_DIRECT_DECODER else tf.constant(0.)
+        dec_activation_loss = rnn_activation_loss(decoder_outputs, hparams.decoder_activation_loss / inp.horizon_window_size) if not self.MLP_DIRECT_DECODER else tf.constant(0.)
         print('dec_stab_loss',dec_stab_loss)
         print('dec_activation_loss',dec_activation_loss)
 
@@ -864,7 +868,7 @@ class Model:
         
         INPUTS:
             decoder_targets - [HORIZON x BATCH]  (for now ignoring quantiles just single value per decoder step)
-            decoder_features - decoder side features for all horizon timesteps [BATCH x HISTORY x FEATURES] (but gets transposed later to make easier)
+            decoder_features - decoder side features for all horizon timesteps [BATCH x HORIZON x FEATURES] (but gets transposed later to make easier)
             time_x - encoder side features and ground truth for all history timesteps [BATCH x HISTORY x FEATURES+1] (but gets transposed later to make easier)
             summary_z - encoded context vector, simple way using same vector as context for every decoder step [BATCH x RNNSTATEDEPTH]. Will be None if not doing encoder context option
             
@@ -1022,133 +1026,114 @@ class Model:
 
 
     
-#    def direct_decoder(self, decoder_features, summary_z, local_context_size, global_context_size, seed):
-#        """
-#        A different kind of decoder. Using the max of the allowed horizon sizes
-#        as the horizon, do a direct forecast, with quantiles.
-#        Based on "A Multi-Horizon Quantile Recurrent Forecaster"
-#        by Amazon AI Labs:
-#        https://arxiv.org/pdf/1711.11053.pdf
-#        
-#        1. One time MLP/CNN to get context vectors [1 global, K local]
-#        
-#        2. Replace the RNN-based decoder with an MLP decoder, called iteratively on every input in the horizon.
-#        """
-#    
-#        #Get dimensions of things based on inputs, features, options:
-#        K = self.hparams.horizon_window_size_minmax[1]
-#        context_depth = summary_z.shape[-1].value if self.hparams.RECURSIVE_W_ENCODER_CONTEXT else 0 #Should just be the encoder RNN depth
-#        feature_depth = decoder_features.shape[-1].value
-#        batchsize = tf.shape(decoder_features)[0]
-#        N1 =  K*feature_depth + context_depth
-#        N2 = int(.5*N1)
-#        #Output of the global MLP/CNN has context vectors for each timestep in horizon 1,...,K; and also one global context vector
-#        N_1_out = global_context_size + K*local_context_size
-#
-#        
-#        
-#        #If doing quantile regression
-#        Nquantiles = len(self.hparams.QUANTILES) if self.hparams.DO_QUANTILES else 0
-#        N_2_out = 1 + Nquantiles #+1 because also do a point estimate optimized by SMAPE. (Even if some of the wuantiles e.g. .48 are really for point estimates, still keep the direct SMAPE optimized point estimate as well.)
-#        print('Nquantiles',Nquantiles)
-#        print('N_out',N_2_out)
-#        
-#
-#        #Quick check there are correct number timesteps:
-#        assert decoder_features.shape[1] == self.inp.horizon_window_size #!!!!!!!quantiles
-#
-#
-#        #Rearrange tensors to all have time first:
-#        # [batch_size, time, input_depth] -> [time, batch_size, input_depth]
-#        decoder_targets = tf.expand_dims(decoder_targets,axis=-1)
-#        decoder_features = tf.transpose(decoder_features, [1, 0, 2])
-#        print('decoder_targets',decoder_targets)
-#        print('decoder_features',decoder_features)        
-#        
-#        decoder_by_time = tf.concat([decoder_targets,decoder_features],axis=2)
-#        encoder_by_time = tf.transpose(time_x, [1, 0, 2]) #Has target and features stacked already
-#
-#        print('decoder_by_time',decoder_by_time)
-#        print('encoder_by_time',encoder_by_time)
-#        all_features_targets_by_time = tf.concat([encoder_by_time,decoder_by_time,right_pad_zeros],axis=0)
-#        print('all_features_targets_by_time',all_features_targets_by_time)
-#        
-#        
-#        #MLP/CNN 1 : Get context vectorsfrom [encoded summary_z; all future features]
-#        def net_1(_x):
-#            fc1 = tf.layers.dense(_x, N2, activation=selu, name='fc1', kernel_initializer=self.default_init())
-#            fc2 = tf.layers.dense(fc1, N_2_out, name='fc2', kernel_initializer=self.default_init())
-#            return fc2
-#        
-#        
-#        
-#        # Stop condition for decoding loop
-#        def cond_fn(timestep, all_timesteps_input, array_targets: tf.TensorArray):
-#            return timestep < self.inp.horizon_window_size
-#
-#        def loop_fn(timestep, all_timesteps_input, array_targets: tf.TensorArray):
-#            print(timestep)
-#            #Excerpt time window
-#            start = timestep - cropped_kernel_size + 1 + offset + self.inp.history_window_size
-#            end = timestep + offset + self.inp.history_window_size + 1
-#            cropped = all_features_targets_by_time[start:end,:,:]
-#            print('timestep,start,end', timestep,start,end)
-#            cropped = tf.transpose(cropped,[1,0,2])
-#            cropped = tf.contrib.layers.flatten(cropped)
-#            
-#            #If using context vector, also append it
-#            if self.hparams.RECURSIVE_W_ENCODER_CONTEXT:
-#                cropped = tf.concat([cropped,summary_z],axis=1)
-#
-#            print('cropped',cropped)
-#            
-#            #Include timestep related features:
-#            #Because using fixed dimension MLP with fixed input for input layer neurons,
-#            #but window is sliding over boundaries with different meaning (0 padded vs legit values),
-#            #use 2 additional features that help control issue of boundary effects.
-#            #Use the (normalized) percent through decoder phase, = normalize(timestep/horizon),
-#            #and the (normalized) percent overlap of the kernel with the 0padded region
-#            f1 = timestep/self.inp.horizon_window_size - .5
-#            f2 = tf.maximum(0, offset - (self.inp.horizon_window_size - timestep)) / offset - .5
-#            _ = tf.stack([batchsize,1])
-#            f1 = tf.cast(tf.fill(_, f1),tf.float32)
-#            f2 = tf.cast(tf.fill(_, f2),tf.float32)
-#            print('f1',f1)
-#            print('f2',f2)
-#            print('cropped',cropped)
-#            flattened_input = tf.concat([cropped,f1,f2],axis=-1)
-#            #Before even running this, we know the shape (other than batchsize which may be dynamic)
-#            #So, since dense layer in feed_forward needs last dimension specified, do this:
-#            flattened_input.set_shape((None,N1))
-#            print('flattened_input',flattened_input)
-#
-#            #Pass tensor into the simple feedforward network:
-#            projected_output = feedforward(flattened_input)
-#            #Append this timestep results 
-#            array_targets = array_targets.write(timestep, projected_output)
-#            
-#                
-#            return timestep + 1, all_timesteps_input, array_targets #!!!!!! quantiles: projected_output will be diff dims
-#
-#
-#        #Since we know the dimensions beforehand, jsut use an init with defined dimension so can initialize the feedforward net
-##        _ = tf.stack([batchsize,N1])
-##        init_features_zeros = tf.cast(tf.fill(_, 0.),tf.float32)
-##        print('init_features_zeros',init_features_zeros)
-#        
-#        # Initial values for loop
-#        loop_init = [tf.constant(0, dtype=tf.int32), #timestep
-#                    all_features_targets_by_time, #init_features_zeros,#all_features_targets_by_time, #all_timesteps_input
-#                    tf.TensorArray(dtype=tf.float32, size=self.inp.horizon_window_size)] #array_targets
-#
-#        # Run the loop
-#        _timestep, _, targets_ta = tf.while_loop(cond_fn, loop_fn, loop_init)        
-#        
-#        #Get the post-processed predictions
-#        #[time, batch_size, Nptcl]
-#        targets = targets_ta.stack()
-#        
-#        # [time, batch_size, 1] -> [time, batch_size]
-##        targets = tf.squeeze(targets, axis=-1)
-#                
-#        return targets
+    def direct_decoder(self, decoder_features, summary_z, local_context_size, global_context_size, seed):
+        """
+        A different kind of decoder. Using the max of the allowed horizon sizes
+        as the horizon, do a direct forecast, with quantiles.
+        Based on "A Multi-Horizon Quantile Recurrent Forecaster"
+        by Amazon AI Labs:
+        https://arxiv.org/pdf/1711.11053.pdf
+        
+        1. One time MLP/CNN to get context vectors [1 global, K local]
+        
+        2. Replace the RNN-based decoder with an MLP decoder, called iteratively on every input in the horizon.
+        
+        Inputs:        
+            decoder_features - decoder side features for all horizon timesteps [BATCH x HORIZON x FEATURES]
+            summary_z - encoded context vector, simple way using same vector as context for every decoder step [BATCH x RNNSTATEDEPTH]. Will be None if not doing encoder context option
+                    
+        """
+    
+        #Get dimensions of things based on inputs, features, options:
+        K = self.hparams.horizon_window_size_minmax[1]
+        summary_z_depth = summary_z.shape[-1].value if self.hparams.RECURSIVE_W_ENCODER_CONTEXT else 0 #Should just be the encoder RNN depth
+        feature_depth = decoder_features.shape[-1].value
+        batchsize = tf.shape(decoder_features)[0]
+        N1 =  K*feature_depth + summary_z_depth
+        N_1_mid = int(.5*N1)
+        print('N1',N1)
+        print('N_1_mid',N_1_mid)
+        #Output of the global MLP/CNN has context vectors for each timestep in horizon 1,...,K; and also one global context vector
+        N_1_out = global_context_size + K*local_context_size
+        print('N_1_out',N_1_out)
+        print('local_context_size',local_context_size)
+        print('global_context_size',global_context_size)
+        
+        
+        #If doing quantile regression
+        N_2_in = global_context_size + local_context_size + feature_depth
+        N_2_mid = int(.5*N_2_in)
+        Nquantiles = len(self.hparams.QUANTILES) if self.hparams.DO_QUANTILES else 0
+        N_2_out = Nquantiles if self.hparams.DO_QUANTILES else 1
+        print('N_2_in',N_2_in)
+        print('Nquantiles',Nquantiles)
+        print('N_2_out',N_2_out)
+        
+        
+        
+        #MLP/CNN 1 : GLOBAL : Get context vectors from [encoded summary_z; all future features]
+        def net_1(_x):
+            net_1_fc1 = tf.layers.dense(_x, N_1_mid, activation=selu, name='net_1_fc1', kernel_initializer=self.default_init())
+            net_1_fc2 = tf.layers.dense(net_1_fc1, N_1_out, name='net_1_fc2', kernel_initializer=self.default_init())
+            return net_1_fc2
+
+        #MLP/CNN 2 : LCOAL : Get quantiles from [local_features; global_context; local_context]
+        #??? Could try feeding in summary_z as well to local. But the global context should basically capture summary_z, so should not need, and would increase net_2 size a lot.
+        def net_2(_x):
+            net_2_fc1 = tf.layers.dense(_x, N_2_mid, activation=selu, name='net_2_fc1', kernel_initializer=self.default_init())
+            net_2_fc2 = tf.layers.dense(net_2_fc1, N_2_out, name='net_2_fc2', kernel_initializer=self.default_init())
+            return net_2_fc2      
+        
+        
+        # Stop condition for decoding loop
+        def cond_fn(timestep, summary_z, decoder_features, local_context_vectors, global_context_vector, array_targets: tf.TensorArray):
+            return timestep < self.inp.horizon_window_size
+
+        def loop_fn(timestep, summary_z, decoder_features, local_context_vectors, global_context_vector, array_targets: tf.TensorArray):
+            print(timestep)
+
+            #Concatenate the 3 inputs: [global context; local context; features for that timestep]
+            net2_input = tf.concat([global_context_vector, local_context_vectors[:,timestep,:], decoder_features[:,timestep,:]],axis=1)
+            quantiles_output = net_2(net2_input)
+            array_targets = array_targets.write(timestep, quantiles_output)
+                
+            return timestep + 1, summary_z, decoder_features, local_context_vectors, global_context_vector, array_targets #!!!!!! quantiles: projected_output will be diff dims
+
+        
+        #One time pass through the GLOBAL network:
+        
+#        ddddd = tf.transpose(tf.expand_dims(summary_z,-1),,perm=[0,2,1])
+        flattened_input = tf.concat([tf.contrib.layers.flatten(decoder_features), summary_z],axis=1)
+#        flattened_input.set_shape((None,N1))
+        context_vectors = net_1(flattened_input)
+        print('context_vectors',context_vectors)
+        global_context_vector = context_vectors[:,:global_context_size]
+        print('global_context_vector',global_context_vector)
+        print('context_vectors[:,global_context_size:]',context_vectors[:,global_context_size:])
+        print('[batchsize, self.inp.horizon_window_size, local_context_size]',[batchsize, K, local_context_size])
+        local_context_vectors = tf.reshape(context_vectors[:,global_context_size:], [batchsize, K, local_context_size])
+        
+        # Initial values for loop
+        loop_init = [tf.constant(0, dtype=tf.int32), #timestep
+                    summary_z,
+                    decoder_features, #init_features_zeros,#all_features_targets_by_time, #all_future_input
+                    local_context_vectors,
+                    global_context_vector,
+                    tf.TensorArray(dtype=tf.float32, size=self.inp.horizon_window_size)] #array_targets
+
+        # Run the loop
+        _timestep, _, _, _, _, targets_ta = tf.while_loop(cond_fn, loop_fn, loop_init)        
+        
+        #[time, batch_size, Nptcl]
+        targets = targets_ta.stack()
+        
+        # [time, batch_size, 1] -> [time, batch_size]
+#        targets = tf.squeeze(targets, axis=-1)
+                
+
+        #Does not use RNN-based decoder, so decoder_outputs are not relevant
+        #But could do regularization on the feedforward net1 and net2 weights...
+#        decoder_outputs = tf.constant(0.,shape=[batchsize, self.inp.horizon_window_size, self.hparams.rnn_depth])
+        decoder_outputs = None
+        
+        return targets, decoder_outputs

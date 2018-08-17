@@ -715,8 +715,22 @@ def predict(features_set, sampling_period, checkpoints, TEST_dir, hparams, histo
                 utf_names = [str(name, 'utf-8') for name in pname]
             except UnicodeDecodeError:
                 utf_names = [str(name) for name in pname]
+            
+            if hparams.DO_QUANTILES:
+                print('pred',pred.shape)
+                Nquantiles = pred.shape[0]
+                assert Nquantiles==len(hparams.QUANTILES), f'QUANTILES is {QUANTILES} but pred.shape is {pred.shape}'
+                for nn, qq in enumerate(hparams.QUANTILES):
+                    #p = preds[nn]
+                    s=ssssssssssss
+                pred_df = pd.DataFrame(index=utf_names, data=np.expm1(pred))
+            else:
+#                print('pred')
+#                print(pred)
+#                print(pred.shape)
+                pred_df = pd.DataFrame(index=utf_names, data=np.expm1(pred[0]))
                 
-            pred_df = pd.DataFrame(index=utf_names, data=np.expm1(pred))
+                
 #            print(pred_df)
 #            print()
             pred_buffer.append(pred_df)

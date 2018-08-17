@@ -3,7 +3,7 @@ import tensorflow.contrib.training as training
 
 # Manually selected params
 params_encdec = dict(
-    batch_size=123,#256,
+    batch_size=128,#256,
     #train_window=380,
 #    train_window=283,#now make this a bash input to do train-validation window size performance heatmaps
     #train_window=30,#try 65 w our data to see if allows more samples through filter
@@ -83,14 +83,14 @@ params_encdec = dict(
     
     # MLP POSTPROCESSOR (ADJUST PREDICTIONS IN LOCAL WINDOWS, AND CAN DO QUANTILES)
     #True or False to use MLP module postprocessor to locally adjust estimates
-    DO_MLP_POSTPROCESS=True,#True,#False
+    DO_MLP_POSTPROCESS=False,#True,#False
     MLP_POSTPROCESS__KERNEL_SIZE=15,
     MLP_POSTPROCESS__KERNEL_OFFSET=7,
     
     
     # DIRECT MLP DECODER (REPLACE RNN CELLS IN DECODER WITH MLP MODULES, AND DO QUANTILES)
     #Do a direct, quantile forecast by using an MLP as decoder module instead of RNN/LSTM/GRU cells:
-    MLP_DIRECT_DECODER=False,
+    MLP_DIRECT_DECODER=True,
     LOCAL_CONTEXT_SIZE=8,
     GLOBAL_CONTEXT_SIZE=64,
     
@@ -98,14 +98,14 @@ params_encdec = dict(
     
     # QUANTILE REGRESSION
     # For whatever kind of decoder, whether or not to use quantiles
-    DO_QUANTILES=False,
+    DO_QUANTILES=True,
     #If doing quantile regression in addition to point estimates trained to minimize SMAPE.
     #Also, since SMAPE point estimates are biased positive, can use alternative
     #point estimator trainde by pinball loss on quantiles < 50 [e.g. 45,38, etc., see what has bias ~0].
     #So if doing quantiles, no longer optimizing SMAPE, but report it anyway to see. So, use the 0th element of QUANTILES list is used as the point estimate for SMAPE
     #(but SMAPE will not be used in loss function: instead will use the average quantile loss (ave over all quantiles))
     #If not using quantile regression, list is ignored
-    QUANTILES = [.45, .47, .5]#.05, .25, .40, .50, .60, 75, .95]
+    QUANTILES = [.45,   .05, .25, .50, .75, .95]
     
     
     #Losses summed together using lembda weighting. 
