@@ -11,3 +11,11 @@ data/*.zip
 data/submission.csv.gz
 !data/2017-08-15_2017-09-11.csv.zip
 
+data/*
+*/.DS_STORE
+.DS_STORE
+images/
+ex_figs/
+
+*.png
+output/
