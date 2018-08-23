@@ -124,7 +124,7 @@ def make_heatmap(metrics_arrays, histories, horizons, outdir, name):
         for x, hor in enumerate(np.arange(len(horizons))):
             for y, hist in enumerate(np.arange(len(histories))):
                 s = np.round(v[y,x],1)
-                plt.text(x-.7, y, s)
+                plt.text(x-.25, y, s)
     #    plt.grid()
         savepath = os.path.join(outdir,f'{savename}.png')
         plt.savefig(savepath)
@@ -144,6 +144,8 @@ if __name__=='__main__':
     
     #for each of the 4 dicts:
     
+    
+    #HOLLYWOOD
     #Make list of id's that were held out from training, to assess transfer ability
     HOLD_OUTS = [str(i) for i in range(500)] #Not actually held out, but just get an idea of performance on earlier ids
     special_ids = [str(i) for i in [531, 1007, 143, 130, 197, 203, 209, 215, 342, 476, 328, 182, 200, 145, 242, 44, 94, 147, 1, 5, 6, 7, 8, 12, 387, 429, 1005, 943]]

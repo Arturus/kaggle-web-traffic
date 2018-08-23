@@ -105,7 +105,7 @@ params_encdec = dict(
     #So if doing quantiles, no longer optimizing SMAPE, but report it anyway to see. So, use the 0th element of QUANTILES list is used as the point estimate for SMAPE
     #(but SMAPE will not be used in loss function: instead will use the average quantile loss (ave over all quantiles))
     #If not using quantile regression, list is ignored
-    QUANTILES = [.45,   .05, .25, .50, .75, .95]
+    QUANTILES = [.45,   .05, .25, .40, .50, .75, .95]
     
     
     #Losses summed together using lembda weighting. 

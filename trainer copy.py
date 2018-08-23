@@ -324,7 +324,7 @@ def train(features_set, sampling_period, name, hparams, multi_gpu=False, n_model
     print('eval_every_step', eval_every_step)
 
 
-    def random_draw_history_and_horizon_window_sizes(trainer,sess,direct):
+    def random_draw_history_and_horizon_window_sizes(trainer,sess):
         """
         Want to not only have random start end, but also variable size chunks for 
         history and horizon sizes in TRAINING phase.
@@ -339,13 +339,7 @@ def train(features_set, sampling_period, name, hparams, multi_gpu=False, n_model
 #        max_predict_empty = int(np.floor(horizon * (1 - TT.train_model.inp.predict_completeness_threshold)))   
         for TT in trainer.trainers:
             TT.train_model.inp.history_window_size = history
-            
-            #Randomly draw the horizon size. But only do this if not using the direct decoder.
-            #The direct decoder uses a fixed max horizon (e.g. 60 days), and whenever you only care to forecast fewer days, then just
-            #take the first N days of the full 60 day forecast. So the horizon stays fixed for this method.
-            if not direct:
-                TT.train_model.inp.horizon_window_size = horizon
-                
+            TT.train_model.inp.horizon_window_size = horizon
             TT.train_model.inp.attn_window = history - horizon + 1
             TT.train_model.inp.max_train_empty = min(history-1, int(np.floor(history * (1 - TT.train_model.inp.train_completeness_threshold))))
             TT.train_model.inp.max_predict_empty = int(np.floor(horizon * (1 - TT.train_model.inp.predict_completeness_threshold)))   
@@ -354,10 +348,15 @@ def train(features_set, sampling_period, name, hparams, multi_gpu=False, n_model
             TT.train_model.inp.inp.restore(sess)
             TT.train_model.inp.init_iterator(sess)
             
+            
+            
             #model.pipe = InputPipeline(...) #!!!!can just reinit new pipe each time?        
 #                #In InputPipe __init__:
 #                def init_iterator(self, session):
 #                    session.run(self.iterator.initializer) 
+            
+            
+            
             
 #            metrics.append(TT.dict_metrics)
 #        MOD_=0
@@ -553,7 +552,7 @@ def train(features_set, sampling_period, name, hparams, multi_gpu=False, n_model
                 #!!!!!!!!!! Variable random length train predict windows
                 #Random draw the train, predict window lengths
                 print(_)
-                trainer = random_draw_history_and_horizon_window_sizes(trainer,sess,hparams.MLP_DIRECT_DECODER)
+                trainer = random_draw_history_and_horizon_window_sizes(trainer,sess)
 #                print('+++++++++++++++', [(TT.train_model.inp.history_window_size,TT.train_model.inp.horizon_window_size) for TT in trainer.trainers])
 #                print('--------', [(TT.train_model.inp.max_train_empty,TT.train_model.inp.max_predict_empty) for TT in trainer.trainers])
 #                print('::::::::::::::', [(TT.train_model.inp.iterator.get_next()) for TT in trainer.trainers])

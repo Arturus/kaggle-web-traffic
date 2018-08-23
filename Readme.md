@@ -28,11 +28,11 @@ The complete pipeline is:
 
 1. $source activate gktf.               #previously set up a conda environment w/ Python 3.6, tensorflow 1.4.0, to match same versions as Kaggle solution
 2. $cd ..../kaggle-web-traffic
-4. $python3 PREPROCESS.py               #Maximize reuse of existing architecture: just put my data in exact same format as Kaggle competition csv's
-5. $./MAKEFEATURES_TRAIN_ALL.sh         #For backtestign in chunks method [4 partially overlapping train-test set pairs]
-6. $python3 RUN_ALL_PREDICTIONS.py      #Run predictions for every ID over triplets of (history, horizon, start point)
-7. $python3 PERFORMANCE_HEATMAPS.py     #Analyze the prediction metrics across different dimensions 
-
+3. $python PREPROCESS.py               #Maximize reuse of existing architecture: just put my data in exact same format as Kaggle competition csv's
+4. $./MAKEFEATURES_TRAIN_ALL.sh         #For backtestign in chunks method [4 partially overlapping train-test set pairs]
+5. $python RUN_ALL_PREDICTIONS.py      #Run predictions for every ID over triplets of (history, horizon, start point)
+6. $python PERFORMANCE_HEATMAPS.py     #Analyze the prediction metrics across different dimensions 
+7. $python quantile_plots.py			#FOr a subet of the predictions, get an idea what the quantiles look like
 
 
 

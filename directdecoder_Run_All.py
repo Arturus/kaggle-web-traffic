@@ -24,9 +24,9 @@ from collections import defaultdict
 # PARAMETRS
 # =============================================================================
 #For histories, we care most about shorter series, so sample lower numbers more densely
-HISTORY_SIZES=[7,8,10,12,15,20,30,50,100]#,200,360]
-HORIZON_SIZES=[7,8,10,12,15,20,30,60] #If doing the Amazon decoder, only do the single fixed length that was used for K [eg. 60 days]
-EVAL_STEP_SIZE=4#step size for evaluation. 1 means use every single day as a FCT to evaluate on. E.g. 3 means step forward 3 timesteps between each FCT to evaluate on.
+HISTORY_SIZES=[100]#[7,8,10,12,15,20,30,50,100]#,200,360]
+HORIZON_SIZES=[60]#[7,8,10,12,15,20,30,60] #If doing the Amazon decoder, only do the single fixed length that was used for K [eg. 60 days]
+EVAL_STEP_SIZE=10#step size for evaluation. 1 means use every single day as a FCT to evaluate on. E.g. 3 means step forward 3 timesteps between each FCT to evaluate on.
 PREDICT_MODE = 'backtest'#'disjoint'
 NAMES = ['TESTset1', 'TESTset2', 'TESTset3', 'TESTset4']
 
@@ -44,6 +44,10 @@ Q_pnt_est = 0.45
 
 SAVE_PLOTS = False
 
+
+
+
+NAMES = ['TESTset3'] #!!!!!!
 
 
 
@@ -300,176 +304,160 @@ if __name__ == '__main__':
         elif PREDICT_MODE=='backtest':
             data_timesteps, N_series = get_data_timesteps_Nseries__backtest(TEST_DF_PATH,TRAIN_DF_PATH)
         
-#        #For the direct decoder, only need to do single prediction (all smaller horizons contained in the max horizon)
-#        if hparams.MLP_DIRECT_DECODER:
-#            #HORIZON_SIZES = max(HORIZON_SIZES)
-#            HORIZON_SIZES = [hparams.horizon_window_size_minmax[1]]
+
         
         
         hist_horiz__all = {}
         t0 = time.clock()
         for history in HISTORY_SIZES:
-            for horizon_size in HORIZON_SIZES:
-                print('HISTORY ',history, 'of ', HISTORY_SIZES)
-                print('HORIZON ',horizon_size, 'of ', HORIZON_SIZES)
-                
-                
-                
-                #For the direct decoder, need to always use the same K horizon, 
-                #but then once the predictions are made, if want to look at horizon < K, then just excerpt leftmost horizon points.
-                #Technically, for this direct decoder, only need to do single prediction (all smaller horizons contained in the max horizon)
-                #which would speed things up a lot. However, would require reorganizing code a bit, so for easiness, just use current code with duplication.
-                if hparams.MLP_DIRECT_DECODER:
-                    horizon = hparams.horizon_window_size_minmax[1]
-                    print('horizon used for direct decoder: {} instead of {}'.format(horizon,horizon_size))
-                else:
-                    horizon = horizon_size
-                
-                
-                #For the disjoint mode, the test set does not overlap art all w the train set. 
-                #The history + horizon window must completely fit in the test set alone.
-                #vs.
-                #in backtest chunk mode, test set include full train set, but 
-                #horizon window always starts after the train set (so horizon 
-                #is fully inside test set). SO for backtest chunk mode, irrelevant
-                #what history + horizon is, only matters that the horizon is fully inside TEST set.
-                if (PREDICT_MODE=='disjoint') and (history+horizon >= data_timesteps):
-                    print(f'history+horizon ({history+horizon}) >= data set size ({data_timesteps})')
-                    continue
-                if (PREDICT_MODE=='backtest') and (horizon > data_timesteps):
-                    print(f'horizon ({horizon}) > test region size ({data_timesteps})')
-                    continue                
-                
-                #Get the range of values that will step through for 
-                if (PREDICT_MODE=='disjoint'):
-                    offs = [i for i in range(horizon, data_timesteps - history +1, EVAL_STEP_SIZE)]
-                if (PREDICT_MODE=='backtest'):
-                    offs = [i for i in range(horizon, data_timesteps+1, EVAL_STEP_SIZE)]
+#            for horizon in HORIZON_SIZES:
+            #For the direct decoder, only need to do single prediction (all smaller horizons contained in the max horizon)
+            if hparams.MLP_DIRECT_DECODER:
+                #HORIZON_SIZES = max(HORIZON_SIZES)
+                horizon = hparams.horizon_window_size_minmax[1]
+            
+            print('HISTORY ',history, 'of ', HISTORY_SIZES)
+            print('HORIZON ',horizon, 'of ', HORIZON_SIZES)
+            
+            #For the disjoint mode, the test set does not overlap art all w the train set. 
+            #The history + horizon window must completely fit in the test set alone.
+            #vs.
+            #in backtest chunk mode, test set include full train set, but 
+            #horizon window always starts after the train set (so horizon 
+            #is fully inside test set). SO for backtest chunk mode, irrelevant
+            #what history + horizon is, only matters that the horizon is fully inside TEST set.
+            if (PREDICT_MODE=='disjoint') and (history+horizon >= data_timesteps):
+                print(f'history+horizon ({history+horizon}) >= data set size ({data_timesteps})')
+                continue
+            if (PREDICT_MODE=='backtest') and (horizon > data_timesteps):
+                print(f'horizon ({horizon}) > test region size ({data_timesteps})')
+                continue                
+            
+            #Get the range of values that will step through for 
+            if (PREDICT_MODE=='disjoint'):
+                offs = [i for i in range(horizon, data_timesteps - history +1, EVAL_STEP_SIZE)]
+            if (PREDICT_MODE=='backtest'):
+                offs = [i for i in range(horizon, data_timesteps+1, EVAL_STEP_SIZE)]
 
 
 
 
-
-                dflists = [] #defaultdict(lambda:[])# if hparams.DO_QUANTILES else [] #!!!!!!!
-                for gg, backoffset in enumerate(offs):
-                    print('backoffset ',backoffset, 'of ', offs)
-                    f_preds = do_predictions_one_setting(history,horizon,backoffset,TEST_dir,SAVE_PLOTS,N_series,chunk)
+            #!!!!!!! dflist as dict per quantile
+            #dflists = defaultdict(lambda:[])# if hparams.DO_QUANTILES else []
+            dflists = []
+            for gg, backoffset in enumerate(offs):
+                print('backoffset ',backoffset, 'of ', offs)
+                f_preds = do_predictions_one_setting(history,horizon,backoffset,TEST_dir,SAVE_PLOTS,N_series,chunk)
 #                    print('f_preds',f_preds)
-                    
-                    #If doing the direct decoder, even though the model is built to predict horizon K ()
-                    if hparams.MLP_DIRECT_DECODER:
-                        for kk,vv in f_preds.items():
-                            K_cols = f_preds[kk].columns[:horizon_size]
-                            f_preds[kk] = vv[K_cols]
-                    
-                    
-                    #Save out some example quantile predictions to make sure they look ok
-                    #!!!!! This is not all of the quantiles: it is only the first backoffset. But can use to plot later
-                    if gg==0:
-                        for kk,vv in f_preds.items():
-                            __out = os.path.join(OUTPUT_DIR, f"{kk}__{history}_{horizon_size}_{chunk}.csv")
-                            vv.to_csv(__out)
-                            
-                    #Just focus on point estimates for now: using q45
-                    if hparams.DO_QUANTILES:
-                        f_preds = f_preds[Q_pnt_est]
-                    else:
-                        f_preds = f_preds['point_est']   
+                
+                
+                #Save out some example quantile predictions to make sure they look ok
+                if gg==0:
+                    for kk,vv in f_preds.items():
+                        vv.to_csv(f"{kk}__{history}_{horizon}_{chunk}.csv")
+                        
+                #Just focus on point estimates for now: using q45
+                if hparams.DO_QUANTILES:
+                    f_preds = f_preds[Q_pnt_est]
+                else:
+                    f_preds = f_preds['point_est']                
+                
+                
 
+                
+#                for horizon in HORIZON_SIZES:
 
-
-                    
-                    #COlumns are same for all quantiles/point estimates, so just use point_est to get dates:
-                    #cols = f_preds[Q_pnt_est].columns if hparams.DO_QUANTILES else f_preds['point_est'].columns
-                    #cols = f_preds.values()[0].columns
-                    cols = f_preds.columns
-                    dates = [i.strftime('%Y-%m-%d') for i in cols]
+                
+                #COlumns are same for all quantiles/point estimates, so just use point_est to get dates:
+                #cols = f_preds[Q_pnt_est].columns if hparams.DO_QUANTILES else f_preds['point_est'].columns
+                cols = f_preds.columns
+                dates = [i.strftime('%Y-%m-%d') for i in cols]
 #                    print(dates)
+                
+                
+                
+                
+                #For each series
+                for jj in range(len(f_preds)):
+                    series = f_preds.iloc[jj]
+                    _id = series.name
+                    true = groundtruth[groundtruth['Page'].astype(str) ==_id]
                     
                     
+                    first_pred_day = dates[0]
+                    d1 = pd.date_range(first_pred_day,first_pred_day)[0] - pd.Timedelta(history,unit='D')
+                    history_dates = pd.date_range(start=d1, end=first_pred_day, freq='D')[:-1]   #!!!!!! asuming daily sampling...
+                    history_dates = [i.strftime('%Y-%m-%d') for i in history_dates]
+                    history_missing_count = np.isnan(true[history_dates].values[0]).sum()
+#                    print('history_missing_count',history_missing_count)                    
+#                    print('true',true)
+                    true = true[dates].values[0]
+                    horizon_missing_count = np.isnan(true).sum()
+#                    print('horizon_missing_count',horizon_missing_count)
                     
+                    #Get smape, mae, bias over this prediction
+                    smp = mean_smape(true, series.values)
+#                    mae = asdasdasd
+                    bi = mean_bias(true, series.values)
+#                    print(smape,bias)
+                    metr_dct = {'SMAPE':smp, 
+                                    'bias':bi,
+                                    #'MAE':mae,
+                                    'predict_start_date':dates[0],
+                                    'predict_end_date':dates[-1],
+                                    'history_missing_count':history_missing_count,
+                                    'horizon_missing_count':horizon_missing_count
+                                    }
+                    #When doing quantiles, also see what fraction is in that quantile
+#                    if hparams.DO_QUANTILES:
+#                        metr_dct[asd] = asdasd
+#                        metr_dct['sharpness'] = 0.
+#                        #MSIS ...
+                        
+                    hist_horiz__all[(history,horizon,backoffset,_id)] = metr_dct
+#                    print(hist_horiz__all)
                     
-                    #For each series
-                    for jj in range(len(f_preds)):
-                        series = f_preds.iloc[jj]
-                        _id = series.name
-                        true = groundtruth[groundtruth['Page'].astype(str) ==_id]
-                        
-                        
-                        first_pred_day = dates[0]
-                        d1 = pd.date_range(first_pred_day,first_pred_day)[0] - pd.Timedelta(history,unit='D')
-                        history_dates = pd.date_range(start=d1, end=first_pred_day, freq='D')[:-1]   #!!!!!! asuming daily sampling...
-                        history_dates = [i.strftime('%Y-%m-%d') for i in history_dates]
-                        history_missing_count = np.isnan(true[history_dates].values[0]).sum()
-    #                    print('history_missing_count',history_missing_count)                    
-    #                    print('true',true)
-                        true = true[dates].values[0]
-                        horizon_missing_count = np.isnan(true).sum()
-    #                    print('horizon_missing_count',horizon_missing_count)
-                        
-                        #Get smape, mae, bias over this prediction
-                        smp = mean_smape(true, series.values)
-    #                    mae = asdasdasd
-                        bi = mean_bias(true, series.values)
-    #                    print(smape,bias)
-                        metr_dct = {'SMAPE':smp, 
-                                        'bias':bi,
-                                        #'MAE':mae,
-                                        'predict_start_date':dates[0],
-                                        'predict_end_date':dates[-1],
-                                        'history_missing_count':history_missing_count,
-                                        'horizon_missing_count':horizon_missing_count
-                                        }
-                        #When doing quantiles, also see what fraction is in that quantile
-#                        if hparams.DO_QUANTILES:
-#                            metr_dct[asd] = asdasd
-#                            metr_dct['sharpness'] = 0.
-#                            #MSIS ...
-                            
-                        hist_horiz__all[(history,horizon_size,backoffset,_id)] = metr_dct
-    #                    print(hist_horiz__all)
-                        
-                      
-    
-    
-                    #For saving out predictions:
-                    dates = [i.strftime('%m/%d/%Y') for i in cols]
-                    d = {cols[i]:dates[i] for i in range(len(cols))}
-                    f_preds.rename(columns=d,inplace=True)
-                    f_preds['Page'] = f_preds.index.values
-                    #Depending on missing data in the test set in the history window for this backoffset,
-                    #it oculd be that that particular id did not pass the train completeness threshold.
-                    #Then it will not be included, but the batchsize will still be len(df), so to fill that missing
-                    #id, it will repeat id's that already had predictions. THey will be identical, 
-                    #so just take the 1st occurrence for those repeated id's:
-                    df = []
-                    u_ids = np.unique(f_preds['Page'].values)
-                    for u in u_ids:
-                        s = f_preds[f_preds['Page']==u]
-                        if len(s)>1:
-                            s = s.head(1)
-                        df.append(s)
-                    f_preds = pd.concat(df,axis=0)
-                    cols = list(f_preds.columns)
-                    cols.remove('Page')
-                    cols = ['Page'] + cols
-                    f_preds = f_preds[cols]                 
+                  
+
+
+                #For saving out predictions:
+                dates = [i.strftime('%m/%d/%Y') for i in cols]
+                d = {cols[i]:dates[i] for i in range(len(cols))}
+                f_preds.rename(columns=d,inplace=True)
+                f_preds['Page'] = f_preds.index.values
+                #Depending on missing data in the test set in the history window for this backoffset,
+                #it oculd be that that particular id did not pass the train completeness threshold.
+                #Then it will not be included, but the batchsize will still be len(df), so to fill that missing
+                #id, it will repeat id's that already had predictions. THey will be identical, 
+                #so just take the 1st occurrence for those repeated id's:
+                df = []
+                u_ids = np.unique(f_preds['Page'].values)
+                for u in u_ids:
+                    s = f_preds[f_preds['Page']==u]
+                    if len(s)>1:
+                        s = s.head(1)
+                    df.append(s)
+                f_preds = pd.concat(df,axis=0)
+                cols = list(f_preds.columns)
+                cols.remove('Page')
+                cols = ['Page'] + cols
+                f_preds = f_preds[cols]                 
 #                    print(f_preds)
-                    
-                    dflists.append(f_preds)
-                    #Care about the metrics within different partitions:
-                    #Beside just history and horizon size, also consider:
-                    #real vs. synthetic augmented series
-                    #training ID vs. new ID only in TEST set
-                    #series contains holiday vs. only non-holidays
-                    #day of week
-                    
-                savename = f"{str(history)}_{str(horizon_size)}_{name}.xls"
-                savename = os.path.join(OUTPUT_DIR,savename)
-                sheetnames = [str(i) for i in offs]
-                SaveMultisheetXLS(dflists, sheetnames, savename)
-                #each sheet is for a single backoffset, so each sheet contains all ~1800 id's
-    
+                
+                dflists.append(f_preds)
+                #Care about the metrics within different partitions:
+                #Beside just history and horizon size, also consider:
+                #real vs. synthetic augmented series
+                #training ID vs. new ID only in TEST set
+                #series contains holiday vs. only non-holidays
+                #day of week
+                
+            savename = f"{str(history)}_{str(horizon)}_{name}.xls"
+            savename = os.path.join(OUTPUT_DIR,savename)
+            sheetnames = [str(i) for i in offs]
+            SaveMultisheetXLS(dflists, sheetnames, savename)
+            #each sheet is for a single backoffset, so each sheet contains all ~1800 id's
+
         
 #        print(hist_horiz__all)
         t1 = time.clock()
