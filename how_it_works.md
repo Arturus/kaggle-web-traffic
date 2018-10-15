@@ -153,7 +153,7 @@ I tried to use RNN activation regularizations from the paper
 ["Regularizing RNNs by Stabilizing Activations"](https://arxiv.org/abs/1511.08400),
 because internal weights in cuDNN GRU can't be directly regularized
 (or I did not found a right way to do this).
-Stability loss did'nt worked at all, activation loss gave some very
+Stability loss didn't work at all, activation loss gave some very
  slight improvement for low (1e-06..1e-05) loss weights.
 
 ## Training and validation
