@@ -1,12 +1,10 @@
 import tensorflow as tf
-from functools import partial
 
 import tensorflow.contrib.cudnn_rnn as cudnn_rnn
 import tensorflow.contrib.rnn as rnn
 import tensorflow.contrib.layers as layers
 from tensorflow.python.util import nest
 
-from cocob import COCOB
 from input_pipe import InputPipe, ModelMode
 
 GRAD_CLIP_THRESHOLD = 10
@@ -36,21 +34,6 @@ def selu(x):
         return scale * tf.where(x >= 0.0, x, alpha * tf.nn.elu(x))
 
 
-def cuda_params_size(cuda_model_builder):
-    """
-    Calculates static parameter size for CUDA RNN
-    :param cuda_model_builder:
-    :return:
-    """
-    with tf.Graph().as_default():
-        cuda_model = cuda_model_builder()
-        params_size_t = cuda_model.params_size()
-        config = tf.ConfigProto(gpu_options=tf.GPUOptions(allow_growth=True))
-        with tf.Session(config=config) as sess:
-            result = sess.run(params_size_t)
-            return result
-
-
 def make_encoder(time_inputs, encoder_features_depth, is_train, hparams, seed, transpose_output=True):
     """
     Builds encoder, using CUDA RNN
@@ -65,33 +48,21 @@ def make_encoder(time_inputs, encoder_features_depth, is_train, hparams, seed, t
 
     def build_rnn():
         return RNN(num_layers=hparams.encoder_rnn_layers, num_units=hparams.rnn_depth,
-                   input_size=encoder_features_depth,
+                   #input_size=encoder_features_depth,
+                   kernel_initializer=tf.initializers.random_uniform(minval=-0.05, maxval=0.05,
+                                                                      seed=seed + 1 if seed else None),
                    direction='unidirectional',
                    dropout=hparams.encoder_dropout if is_train else 0, seed=seed)
 
-    static_p_size = cuda_params_size(build_rnn)
     cuda_model = build_rnn()
-    params_size_t = cuda_model.params_size()
-    with tf.control_dependencies([tf.assert_equal(params_size_t, [static_p_size])]):
-        cuda_params = tf.get_variable("cuda_rnn_params",
-                                      initializer=tf.random_uniform([static_p_size], minval=-0.05, maxval=0.05,
-                                                                    dtype=tf.float32, seed=seed + 1 if seed else None)
-                                      )
-
-    def build_init_state():
-        batch_len = tf.shape(time_inputs)[0]
-        return tf.zeros([hparams.encoder_rnn_layers, batch_len, hparams.rnn_depth], dtype=tf.float32)
-
-    input_h = build_init_state()
 
     # [batch, time, features] -> [time, batch, features]
     time_first = tf.transpose(time_inputs, [1, 0, 2])
     rnn_time_input = time_first
-    model = partial(cuda_model, input_data=rnn_time_input, input_h=input_h, params=cuda_params)
     if RNN == tf.contrib.cudnn_rnn.CudnnLSTM:
-        rnn_out, rnn_state, c_state = model(input_c=build_init_state())
+        rnn_out, (rnn_state, c_state) = cuda_model(inputs=rnn_time_input)
     else:
-        rnn_out, rnn_state = model()
+        rnn_out, (rnn_state,) = cuda_model(inputs=rnn_time_input)
         c_state = None
     if transpose_output:
         rnn_out = tf.transpose(rnn_out, [1, 0, 2])
@@ -261,7 +232,7 @@ def calc_loss(predictions, true_y, additional_mask=None):
 
 
 def make_train_op(loss, ema_decay=None, prefix=None):
-    optimizer = COCOB()
+    optimizer = tf.train.AdamOptimizer()
     glob_step = tf.train.get_global_step()
 
     # Add regularization losses
